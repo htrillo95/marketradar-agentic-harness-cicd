@@ -115,7 +115,7 @@ jobs:
             -v "$GITHUB_WORKSPACE/ci-artifacts":/reports \
             -w /workspace \
             agentic_engineer_4 \
-            python -m pytest eval/test_deterministic.py eval/test_deterministic_router.py eval/test_deterministic_step.py -v \
+            python -m pytest eval/test_deterministic.py eval/test_deterministic_router.py eval/test_deterministic_step.py eval/test_ci_gate_regression.py -v \
               --json-report \
               --json-report-file=/reports/deterministic-report.json
 
