@@ -1021,3 +1021,340 @@ def test_audit_trail_records_eval_gate():
     assert job["if"] == "always()"
     command = next(step["run"] for step in job["steps"] if "build-audit-trail.py" in str(step.get("run", "")))
     assert "--eval-result" in command and "needs.eval-gate.result" in command
+
+
+# ---------------------------------------------------------------------------
+# Module 4.2: advisory code review (advisory-review job and
+# scripts/run-reviewer.py). The script tests never start the claude CLI:
+# subprocess.run is replaced by a fake that records the command.
+# ---------------------------------------------------------------------------
+
+RUN_REVIEWER = REPO_ROOT / "scripts" / "run-reviewer.py"
+REVIEW_STEP_NAME = "Run advisory agentic review"
+COMMENT_STEP_NAME = "Post review comment"
+DUMMY_KEY = "sk-test-dummy"
+
+
+def _named_step(job, name):
+    return next(step for step in job["steps"] if step.get("name") == name)
+
+
+def _review_job():
+    return _workflow()["jobs"]["advisory-review"]
+
+
+def test_advisory_review_job_is_advisory_and_scoped():
+    job = _review_job()
+    assert job.get("continue-on-error") is True
+    assert "pull_request" in job["if"]
+    assert job["permissions"] == {"contents": "read", "pull-requests": "write"}
+
+
+def test_only_advisory_review_has_permissions():
+    workflow = _workflow()
+    assert "permissions" not in workflow, "no workflow-level permissions block expected"
+    holders = [name for name, job in workflow["jobs"].items() if "permissions" in job]
+    assert holders == ["advisory-review"]
+
+
+def test_advisory_review_checkout_does_not_persist_credentials():
+    checkout = next(
+        step for step in _review_job()["steps"]
+        if str(step.get("uses", "")).startswith("actions/checkout")
+    )
+    assert checkout["with"]["persist-credentials"] is False
+
+
+def test_advisory_review_step_mounts_and_passes_changed_files_by_name():
+    step = _named_step(_review_job(), REVIEW_STEP_NAME)
+    script = step["run"]
+    assert "docker run" in script
+    assert '"$GITHUB_WORKSPACE":/workspace:ro' in script
+    assert '"$GITHUB_WORKSPACE/ci-out":/out' in script
+    assert re.search(r"-e CHANGED_FILES\s*\\?\s*$", script, re.M), "CHANGED_FILES must be passed by name"
+    assert "CHANGED_FILES=" not in script
+    assert step["env"]["CHANGED_FILES"] == "${{ needs.change-type-check.outputs.changed-files }}"
+    assert "${{" not in script, "expressions must not be interpolated into the run script"
+
+
+def test_anthropic_key_and_github_token_are_step_scoped():
+    workflow = _workflow()
+    assert "ANTHROPIC_API_KEY" not in json.dumps(workflow.get("env", {}))
+    key_holders, token_holders = [], []
+    for job_name, job in workflow["jobs"].items():
+        job_level = json.dumps({k: v for k, v in job.items() if k != "steps"})
+        assert "ANTHROPIC_API_KEY" not in job_level, f"{job_name} exposes ANTHROPIC_API_KEY job-wide"
+        assert "GH_TOKEN" not in job_level and "github.token" not in job_level
+        for step in job.get("steps", []):
+            if "ANTHROPIC_API_KEY" in json.dumps(step):
+                key_holders.append((job_name, step.get("name")))
+            if "GH_TOKEN" in json.dumps(step) or "github.token" in json.dumps(step):
+                token_holders.append((job_name, step.get("name")))
+    assert key_holders == [("advisory-review", REVIEW_STEP_NAME)]
+    assert token_holders == [("advisory-review", COMMENT_STEP_NAME)]
+    review = _named_step(workflow["jobs"]["advisory-review"], REVIEW_STEP_NAME)
+    assert review["env"]["ANTHROPIC_API_KEY"] == "${{ secrets.ANTHROPIC_API_KEY }}"
+    comment = _named_step(workflow["jobs"]["advisory-review"], COMMENT_STEP_NAME)
+    assert comment["env"]["GH_TOKEN"] == "${{ github.token }}"
+    assert "GH_TOKEN" not in comment["run"] and "github.token" not in comment["run"]
+
+
+def test_advisory_review_comment_step_posts_review_body():
+    step = _named_step(_review_job(), COMMENT_STEP_NAME)
+    assert "gh pr comment" in step["run"]
+    assert "--body-file ci-out/review-output.md" in step["run"]
+    assert step.get("continue-on-error") is True
+    assert "always()" in step["if"]
+
+
+def test_advisory_review_upload_always_and_ignore_missing():
+    upload = next(
+        step for step in _review_job()["steps"]
+        if str(step.get("uses", "")).startswith("actions/upload-artifact")
+    )
+    assert upload["if"] == "always()"
+    assert upload["with"]["if-no-files-found"] == "ignore"
+    assert upload["with"]["path"] == "ci-artifacts/"
+
+
+def _load_reviewer(monkeypatch, tmp_path, key):
+    monkeypatch.setattr(sys, "dont_write_bytecode", True)
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "sample.py").write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
+    monkeypatch.chdir(work)
+    monkeypatch.setenv("CHANGED_FILES", "sample.py")
+    monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
+    if key is None:
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    else:
+        monkeypatch.setenv("ANTHROPIC_API_KEY", key)
+    spec = importlib.util.spec_from_file_location(f"_run_reviewer_{uuid.uuid4().hex}", RUN_REVIEWER)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    out = tmp_path / "out"
+    monkeypatch.setattr(module, "OUT_DIR", out)
+    return module, out
+
+
+def _fake_claude(calls, returncode=0, stdout="", write_audit=False, configs=None):
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        # The script deletes the config directory after the run, so read it now.
+        config_text = Path(cmd[cmd.index("--mcp-config") + 1]).read_text(encoding="utf-8")
+        if configs is not None:
+            configs.append(config_text)
+        if write_audit:
+            config = json.loads(config_text)
+            log = Path(config["mcpServers"]["retrieval"]["env"]["RETRIEVAL_AUDIT_LOG"])
+            log.parent.mkdir(parents=True, exist_ok=True)
+            with log.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps({"event": "retrieval_success", "role": "reviewer"}) + "\n")
+        return subprocess.CompletedProcess(cmd, returncode, stdout=stdout, stderr="boom " + DUMMY_KEY)
+
+    return fake_run
+
+
+def _reviewer_outputs(out):
+    review = (out / "review-output.md").read_text(encoding="utf-8")
+    audit_text = (out / "review-audit.json").read_text(encoding="utf-8")
+    assert DUMMY_KEY not in review and DUMMY_KEY not in audit_text
+    return review, json.loads(audit_text)
+
+
+SUBAGENT_STDOUT = json.dumps({"result": "## Advisory Code Review\n- none", "is_error": False, "num_turns": 2})
+
+
+def test_reviewer_without_key_does_not_invoke_claude(monkeypatch, tmp_path):
+    module, out = _load_reviewer(monkeypatch, tmp_path, None)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("claude must not be invoked without ANTHROPIC_API_KEY")
+
+    monkeypatch.setattr(module.subprocess, "run", forbidden)
+    assert module.main() == 0
+    review, audit = _reviewer_outputs(out)
+    assert "ANTHROPIC_API_KEY" in review
+    assert audit["reviewer"]["ran"] is False
+    assert audit["mcp"]["audit_log_present"] is False
+    assert audit["mcp"]["servers_configured"] == []
+
+
+def test_reviewer_runs_subagent_with_only_retrieval_mcp(monkeypatch, tmp_path):
+    module, out = _load_reviewer(monkeypatch, tmp_path, DUMMY_KEY)
+    calls, configs = [], []
+    monkeypatch.setattr(module.subprocess, "run", _fake_claude(calls, stdout=SUBAGENT_STDOUT, configs=configs))
+    assert module.main() == 0
+    review, audit = _reviewer_outputs(out)
+    assert review.startswith(module.REVIEW_HEADER)
+    assert "marketradar-code-reviewer" in review.splitlines()[0]
+    assert "## Advisory Code Review\n- none" in review
+
+    assert len(calls) == 1
+    cmd = calls[0]
+    assert cmd[0] == "claude" and "-p" in cmd
+    assert cmd[cmd.index("--agent") + 1] == "marketradar-code-reviewer"
+    assert "--strict-mcp-config" in cmd
+    assert DUMMY_KEY not in json.dumps(cmd)
+    config_path = Path(cmd[cmd.index("--mcp-config") + 1])
+    assert out not in config_path.parents
+    assert len(configs) == 1
+    config = json.loads(configs[0])
+    assert list(config["mcpServers"]) == ["retrieval"]
+    assert config["mcpServers"]["retrieval"]["env"]["AGENT_ROLE"] == "reviewer"
+    assert DUMMY_KEY not in configs[0]
+
+    assert audit["reviewer"]["ran"] is True
+    assert audit["reviewer"]["mechanism"] == "claude -p --agent marketradar-code-reviewer"
+    assert audit["reviewer"]["num_turns"] == 2
+    assert audit["mcp"]["servers_configured"] == ["retrieval"]
+    assert audit["mcp"]["agent_role"] == "reviewer"
+    assert audit["mcp"]["audit_log_present"] is False
+    assert audit["mcp"]["audit_log"] is None
+    assert audit["mcp"]["audit_log_records"] == 0
+
+
+def test_reviewer_failure_still_exits_zero(monkeypatch, tmp_path):
+    module, out = _load_reviewer(monkeypatch, tmp_path, DUMMY_KEY)
+    calls = []
+    monkeypatch.setattr(module.subprocess, "run", _fake_claude(calls, returncode=1))
+    assert module.main() == 0
+    review, audit = _reviewer_outputs(out)
+    assert len(calls) == 1
+    assert audit["reviewer"]["ran"] is False
+    assert audit["reviewer"]["exit_code"] == 1
+    assert "did not complete" in review
+
+
+def test_reviewer_reports_mcp_audit_log_from_disk(monkeypatch, tmp_path):
+    module, out = _load_reviewer(monkeypatch, tmp_path, DUMMY_KEY)
+    calls = []
+    monkeypatch.setattr(
+        module.subprocess, "run", _fake_claude(calls, stdout=SUBAGENT_STDOUT, write_audit=True)
+    )
+    assert module.main() == 0
+    _, audit = _reviewer_outputs(out)
+    assert audit["mcp"]["audit_log_present"] is True
+    assert audit["mcp"]["audit_log_records"] == 1
+    assert audit["mcp"]["audit_log"] == "mcp-audit/retrieval-audit-log.jsonl"
+    assert (out / "mcp-audit" / "retrieval-audit-log.jsonl").is_file()
+
+
+@pytest.mark.parametrize(
+    "payload, reason",
+    [
+        ({"result": "API Error: overloaded " + DUMMY_KEY, "is_error": True, "num_turns": 1}, "is_error"),
+        ({"result": "partial", "is_error": False, "subtype": "error_max_turns", "num_turns": 20}, "error_max_turns"),
+        ({"result": "", "is_error": False, "subtype": "success", "num_turns": 1}, "empty_result"),
+    ],
+    ids=["is-error", "error-max-turns", "empty-result"],
+)
+def test_reviewer_error_result_is_not_presented_as_review(payload, reason, monkeypatch, tmp_path):
+    module, out = _load_reviewer(monkeypatch, tmp_path, DUMMY_KEY)
+    calls = []
+    monkeypatch.setattr(module.subprocess, "run", _fake_claude(calls, stdout=json.dumps(payload)))
+    assert module.main() == 0
+    review, audit = _reviewer_outputs(out)
+    assert review.startswith(module.NOT_RUN_HEADER)
+    assert "Generated by" not in review
+    assert "did not produce a review" in review
+    assert audit["reviewer"]["ran"] is False
+    assert audit["reviewer"]["error"] == f"claude_reported_error: {reason}"
+    assert audit["reviewer"]["is_error"] == payload["is_error"]
+    assert audit["reviewer"]["num_turns"] == payload["num_turns"]
+    assert audit["mcp"]["servers_configured"] == ["retrieval"]
+
+
+def test_reviewer_missing_claude_reports_no_mcp_server(monkeypatch, tmp_path):
+    module, out = _load_reviewer(monkeypatch, tmp_path, DUMMY_KEY)
+    calls = []
+
+    def missing(cmd, **kwargs):
+        calls.append(cmd)
+        raise FileNotFoundError("claude")
+
+    monkeypatch.setattr(module.subprocess, "run", missing)
+    assert module.main() == 0
+    review, audit = _reviewer_outputs(out)
+    assert len(calls) == 1
+    assert review.startswith(module.NOT_RUN_HEADER)
+    assert audit["reviewer"]["ran"] is False
+    assert audit["reviewer"]["error"] == "FileNotFoundError"
+    assert audit["mcp"]["servers_configured"] == []
+    assert audit["mcp"]["audit_log_present"] is False
+    assert not Path(calls[0][calls[0].index("--mcp-config") + 1]).parent.exists()
+
+
+@pytest.mark.parametrize("returncode", [0, 1])
+def test_reviewer_removes_temporary_mcp_config(returncode, monkeypatch, tmp_path):
+    module, out = _load_reviewer(monkeypatch, tmp_path, DUMMY_KEY)
+    calls = []
+    monkeypatch.setattr(
+        module.subprocess, "run", _fake_claude(calls, returncode=returncode, stdout=SUBAGENT_STDOUT)
+    )
+    assert module.main() == 0
+    config_dir = Path(calls[0][calls[0].index("--mcp-config") + 1]).parent
+    assert not config_dir.exists()
+
+
+# Reviewer definition used by the advisory review must match the policy
+# (Bash removed, D4) and the retrieval server's real parameters.
+
+REVIEWER_DEFINITION = AGENTS_DIR / "marketradar-code-reviewer.md"
+EXPECTED_REVIEWER_TOOLS = {"Read", "Grep", "Glob", "mcp__retrieval__retrieve"}
+
+
+def _reviewer_body():
+    return REVIEWER_DEFINITION.read_text(encoding="utf-8").split("---\n", 2)[2]
+
+
+def _reviewer_script_tool_lists(monkeypatch):
+    monkeypatch.setattr(sys, "dont_write_bytecode", True)
+    spec = importlib.util.spec_from_file_location(f"_run_reviewer_{uuid.uuid4().hex}", RUN_REVIEWER)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    def split(value):
+        return {tool.strip() for tool in value.split(",") if tool.strip()}
+
+    return split(module.ALLOWED_TOOLS), split(module.DISALLOWED_TOOLS)
+
+
+def test_reviewer_definition_tools_are_read_only():
+    tools = _tools(_frontmatter(REVIEWER_DEFINITION))
+    assert tools == EXPECTED_REVIEWER_TOOLS
+    assert not tools & {"Bash", "Edit", "Write", "Skill"}
+
+
+def test_reviewer_definition_uses_retrieval_server_parameters():
+    body = _reviewer_body()
+    assert "query" in body and "top_k" in body
+    for stale in ("calling_role", "project_id", "classification_ceiling:"):
+        assert stale not in body, f"reviewer definition still passes Module 3 argument {stale!r}"
+
+
+def test_retrieval_tool_parameters_are_query_and_top_k(monkeypatch, tmp_path):
+    import inspect
+
+    server = _load_server("retrieval", "reviewer", monkeypatch, tmp_path)
+    # With fastmcp installed, @mcp.tool wraps the function; without it the
+    # fallback decorator returns the function itself.
+    function = getattr(server.retrieve, "fn", server.retrieve)
+    assert set(inspect.signature(function).parameters) == {"query", "top_k"}
+
+    async def listed():
+        async with Client(server.mcp) as client:
+            return await client.list_tools()
+
+    tool = next(tool for tool in asyncio.run(listed()) if tool.name == "retrieve")
+    # Prefer the current attribute name; fall back to the deprecated one only if absent.
+    schema = getattr(tool, "input_schema", None) or tool.inputSchema
+    assert set(schema["properties"]) == {"query", "top_k"}
+
+
+def test_run_reviewer_tool_lists_match_reviewer_definition(monkeypatch):
+    allowed, disallowed = _reviewer_script_tool_lists(monkeypatch)
+    tools = _tools(_frontmatter(REVIEWER_DEFINITION))
+    assert allowed, "run-reviewer.py ALLOWED_TOOLS is empty"
+    assert allowed <= tools, f"allowed in CI but not in the definition: {sorted(allowed - tools)}"
+    assert not disallowed & tools, f"disallowed in CI but granted by the definition: {sorted(disallowed & tools)}"

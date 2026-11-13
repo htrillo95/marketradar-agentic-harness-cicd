@@ -34,7 +34,7 @@ not conflict with any near-miss pattern in the calibration log.
   | planner | `.claude/agents/planner.md` | `planner` (`run-agent.sh` lines 23–27); retrieval allow-list only, no storage grants | `planner` |
   | implementer | `.claude/agents/implementer.md` | `implementer` | `implementer` |
   | tester | `.claude/agents/tester.md` | `tester` | `tester` |
-  | marketradar-code-reviewer | `.claude/agents/marketradar-code-reviewer.md` | `reviewer` | `code-reviewer` |
+  | marketradar-code-reviewer | `.claude/agents/marketradar-code-reviewer.md` | `reviewer` | n/a (since v1.5.1 the definition declares no `calling_role`) |
   | project-manager | `.claude/agents/project-manager.md` | `project-manager` | `project_manager` |
   | orchestrator | `CLAUDE.md` "Orchestrator Workflow" (no agent file) | `orchestrator` | n/a |
   | dependency-auditor | `.claude/agents/dependency-auditor.md` | `dependency-auditor` (`run-agent.sh` lines 23–27); explicitly denied in both allow-lists | n/a (the definition declares no `calling_role`) |
@@ -65,6 +65,7 @@ not conflict with any near-miss pattern in the calibration log.
   - v1.3.1 (2026-11-10): D11 resolved: `eval/test_policy.py` parses the per-role tables and compares them with the enforcement artifacts; grants unchanged.
   - v1.4.0 (2026-11-10): `dependency-auditor` role entry added (Module 4.1 Exercise 1, policy step); enforcement pending (D17); existing roles and grants unchanged.
   - v1.5.0 (2026-11-10): `dependency-auditor` enforced: agent definition, `run-agent.sh` case (read-only, no memory), explicit denials in both allow-lists, `run-tests` scope NO, and a PreToolUse Bash hook restricting it to the approved audit commands; D17 resolved; grants unchanged.
+  - v1.5.1 (2026-11-13): marketradar-code-reviewer definition aligned with the policy: Bash removed (D4 resolved) and retrieval instructions match the server's `query`/`top_k` parameters, role from `AGENT_ROLE` (D3 updated); grants unchanged.
 
 ### Documentation reconciliation notes
 
@@ -235,7 +236,7 @@ The Planner subagent does not hold the Skill tool (`planner.md` line 4).
 
 **Version:** v1.1.0  
 **Defined in:** `.claude/agents/marketradar-code-reviewer.md`  
-**Module 4 runtime role:** `reviewer` (self-declares `calling_role: code-reviewer`, `marketradar-code-reviewer.md` line 15)
+**Module 4 runtime role:** `reviewer` (the definition no longer self-declares a `calling_role`; the retrieval server takes `reviewer` from `AGENT_ROLE`, `marketradar-code-reviewer.md` line 15)
 
 ### MCP server and operation access
 
@@ -247,13 +248,13 @@ The Planner subagent does not hold the Skill tool (`planner.md` line 4).
 | update_entry | storage | NO | The Reviewer is read-only. | [LP] [Def] |
 | delete_entry | storage | NO | The Reviewer is read-only. | [LP] [Def] |
 | audit_read | storage | NO | Audit inspection is owned by the Orchestrator. | [LP] |
-| retrieve | retrieval | YES | The definition requires lesson retrieval at `internal` (`marketradar-code-reviewer.md` lines 12–15). Denied by permission mode in HO-05 and HO-06 (reflection line 88). | [Def] [B5] |
+| retrieve | retrieval | YES | The definition requires lesson retrieval with the server's `query` and `top_k` parameters, and the server applies the `internal` ceiling (`marketradar-code-reviewer.md` lines 12–15). Denied by permission mode in HO-05 and HO-06 (reflection line 88). | [Def] [B5] |
 
 ### Skill activation scope
 
 | Skill | Activation permitted | Reason / Basis |
 |---|---|---|
-| run-tests | NO | Read-only role; testing belongs to the Tester. The definition forbids commands that change repository or application state (`marketradar-code-reviewer.md` line 19). [Def] [LP] Enforced: the reviewer definition has no Skill tool, and the hook denies `run-tests` to any caller other than the Tester. Neither stops the reviewer's Bash (D4). |
+| run-tests | NO | Read-only role; testing belongs to the Tester. The definition forbids commands that change repository or application state (`marketradar-code-reviewer.md` line 19). [Def] [LP] Enforced: the reviewer definition has no Skill tool, and the hook denies `run-tests` to any caller other than the Tester. The definition no longer grants Bash (D4 resolved). |
 | draft-pr-description | NO | Review findings are the Reviewer's only output. [LP] |
 | summarize-session | NO | The review ends with its own overall assessment (`marketradar-code-reviewer.md` line 27). [LP] |
 | check-gmail | NO | No MarketRadar use; brings external personal data into context. [LP] |
@@ -264,7 +265,7 @@ The Planner subagent does not hold the Skill tool (`planner.md` line 4).
 ### Data classification ceiling
 
 **Maximum level:** internal  
-**Reason:** The definition passes `classification_ceiling: internal` (`marketradar-code-reviewer.md` line 14). Reviewing internal work needs no confidential material.
+**Reason:** The ceiling is set by the retrieval allow-list entry for `reviewer` (`mcp-servers/retrieval/allow-list.json`). The definition no longer passes `classification_ceiling`; line 15 now documents that the server applies it (`marketradar-code-reviewer.md` line 15). Reviewing internal work needs no confidential material.
 
 ### Autonomy level
 
@@ -278,7 +279,7 @@ The Planner subagent does not hold the Skill tool (`planner.md` line 4).
 | Tool | Granted | Reason / Basis |
 |---|---|---|
 | Read, Grep, Glob | YES | These cover everything a read-only review needs (reflection line 79). [Def] |
-| Bash | NO | Not needed. In HO-06 it was used only for `ls`, `grep` and `wc` (`calibration-log.md` lines 57, 319 and 364). The frontmatter still grants it (`marketradar-code-reviewer.md` line 4; D4). [B3] |
+| Bash | NO | Not needed. In HO-06 it was used only for `ls`, `grep` and `wc` (`calibration-log.md` lines 57, 319 and 364). The frontmatter no longer grants it (`marketradar-code-reviewer.md` line 4; D4 resolved). [B3] |
 | Edit, Write | NO | "Do not modify, create, or delete any project files" (`marketradar-code-reviewer.md` line 18). [Def] |
 | Direct Read of `.memory/reference/` files above `internal` | NO | Bypasses the retrieval ceiling. [B4] |
 
@@ -459,9 +460,9 @@ This section records gaps between this policy and the current configuration. No 
 | ID | Gap | Proposed action | Basis |
 |---|---|---|---|
 | D1 | Resolved (Module 4.1). Layer 1: `scripts/run-agent.sh` launches `planner` with workspace read-only and memory omitted (lines 23–27). Layer 2: `planner` is in `mcp-servers/retrieval/allow-list.json` with ceiling `internal` (lines 23–26). | None. | `docs/module3/migration-notes.md` line 91 |
-| D2 | The MCP tools in `.claude/agents/*.md` resolve to no configured server. The agent bodies use Module 3 argument shapes (`project_id`, `calling_role`, …), but Module 4 uses `write_entry(key, value)` (`storage/server.py` line 72) and `retrieve(query, top_k)` (`retrieval/server.py` line 77). | Register the Module 4 servers and update the agent bodies. | [Def] |
-| D3 | Allow-list part resolved (Module 4.1, Layer 2): `mcp-servers/storage/allow-list.json` and `mcp-servers/retrieval/allow-list.json` match the MCP tables in this policy, and `eval/test_policy.py` checks them against both a hard-coded matrix and the parsed policy tables (D11). Remaining: the self-declared `calling_role` names in the agent definitions (`code-reviewer`, `project_manager`) still differ from the runtime names (`reviewer`, `project-manager`). The Module 4 servers authorize on `AGENT_ROLE` and ignore them. | Align the self-declared names with the runtime names when the agent bodies are updated (D2); agent definitions were out of scope for Layer 2. | [LP] |
-| D4 | `marketradar-code-reviewer` frontmatter still grants Bash (line 4). | Remove Bash. | [B3] |
+| D2 | The MCP tools in `.claude/agents/*.md` resolve to no configured server. The agent bodies use Module 3 argument shapes (`project_id`, `calling_role`, …), but Module 4 uses `write_entry(key, value)` (`storage/server.py` line 72) and `retrieve(query, top_k)` (`retrieval/server.py` line 77). The reviewer body was aligned with the retrieval server's `query`/`top_k` parameters in v1.5.1; the other agent bodies still use Module 3 argument shapes. | Register the Module 4 servers and update the agent bodies. | [Def] |
+| D3 | Allow-list part resolved (Module 4.1, Layer 2): `mcp-servers/storage/allow-list.json` and `mcp-servers/retrieval/allow-list.json` match the MCP tables in this policy, and `eval/test_policy.py` checks them against both a hard-coded matrix and the parsed policy tables (D11). Remaining: the self-declared `calling_role` name `project_manager` in `.claude/agents/project-manager.md` still differs from the runtime name `project-manager`; `code-reviewer` was removed from the reviewer definition in v1.5.1. The Module 4 servers authorize on `AGENT_ROLE` and ignore them. | Align the self-declared names with the runtime names when the agent bodies are updated (D2); agent definitions were out of scope for Layer 2. | [LP] |
+| D4 | Resolved (v1.5.1): Bash removed from `.claude/agents/marketradar-code-reviewer.md` line 4. | None. | [B3] |
 | D5 | Tester Bash is unscoped. | Scope it to the validation commands with command-scoped permission rules. | [B1] |
 | D6 | `no_source_writes` cannot detect writes made through Bash. A scoped `run-tests` skill now exists (Layer 3), but skill scope does not cover Bash. | Detect Bash writes in the evaluator, for example with a working-tree diff. A scoped `run-tests` skill exists (Layer 3); detecting Bash writes remains open. | [B2] [B1] |
 | D7 | Retrieval is denied by permission mode for the Planner, Tester and Reviewer. | Explicitly allow `mcp__retrieval__retrieve` for those roles under their permission modes. | [B5] |

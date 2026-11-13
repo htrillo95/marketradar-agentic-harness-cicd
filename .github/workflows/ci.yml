@@ -191,8 +191,13 @@ jobs:
     needs: [change-type-check, policy-gate]
     if: github.event_name == 'pull_request'
     continue-on-error: true
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Build course container
         run: docker build -t agentic_engineer_4 .
@@ -200,6 +205,7 @@ jobs:
       - name: Run advisory agentic review
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CHANGED_FILES: ${{ needs.change-type-check.outputs.changed-files }}
         run: |
           mkdir -p ci-out ci-artifacts
           docker run --rm \
@@ -207,11 +213,20 @@ jobs:
             -v "$GITHUB_WORKSPACE/ci-out":/out \
             -w /workspace \
             -e ANTHROPIC_API_KEY \
-            -e CHANGED_FILES="${{ needs.change-type-check.outputs.changed-files }}" \
+            -e CHANGED_FILES \
             agentic_engineer_4 \
             python scripts/run-reviewer.py
 
           cp -r ci-out/. ci-artifacts/ 2>/dev/null || true
+
+      # Fork PRs get a read-only token, so this step can fail without failing anything.
+      - name: Post review comment
+        if: always() && hashFiles('ci-out/review-output.md') != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file ci-out/review-output.md
 
       - name: Upload advisory review artifact
         if: always()
