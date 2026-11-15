@@ -1032,6 +1032,7 @@ def test_audit_trail_records_eval_gate():
 RUN_REVIEWER = REPO_ROOT / "scripts" / "run-reviewer.py"
 REVIEW_STEP_NAME = "Run advisory agentic review"
 COMMENT_STEP_NAME = "Post review comment"
+AUDIT_COMMENT_STEP_NAME = "Post audit summary comment"
 DUMMY_KEY = "sk-test-dummy"
 
 
@@ -1050,11 +1051,13 @@ def test_advisory_review_job_is_advisory_and_scoped():
     assert job["permissions"] == {"contents": "read", "pull-requests": "write"}
 
 
-def test_only_advisory_review_has_permissions():
+def test_only_comment_posting_jobs_have_permissions():
     workflow = _workflow()
     assert "permissions" not in workflow, "no workflow-level permissions block expected"
     holders = [name for name, job in workflow["jobs"].items() if "permissions" in job]
-    assert holders == ["advisory-review"]
+    assert holders == ["advisory-review", "audit-trail"]
+    for name in holders:
+        assert workflow["jobs"][name]["permissions"] == {"contents": "read", "pull-requests": "write"}, name
 
 
 def test_advisory_review_checkout_does_not_persist_credentials():
@@ -1091,12 +1094,16 @@ def test_anthropic_key_and_github_token_are_step_scoped():
             if "GH_TOKEN" in json.dumps(step) or "github.token" in json.dumps(step):
                 token_holders.append((job_name, step.get("name")))
     assert key_holders == [("advisory-review", REVIEW_STEP_NAME)]
-    assert token_holders == [("advisory-review", COMMENT_STEP_NAME)]
+    assert token_holders == [
+        ("advisory-review", COMMENT_STEP_NAME),
+        ("audit-trail", AUDIT_COMMENT_STEP_NAME),
+    ]
     review = _named_step(workflow["jobs"]["advisory-review"], REVIEW_STEP_NAME)
     assert review["env"]["ANTHROPIC_API_KEY"] == "${{ secrets.ANTHROPIC_API_KEY }}"
-    comment = _named_step(workflow["jobs"]["advisory-review"], COMMENT_STEP_NAME)
-    assert comment["env"]["GH_TOKEN"] == "${{ github.token }}"
-    assert "GH_TOKEN" not in comment["run"] and "github.token" not in comment["run"]
+    for job_name, step_name in token_holders:
+        comment = _named_step(workflow["jobs"][job_name], step_name)
+        assert comment["env"]["GH_TOKEN"] == "${{ github.token }}"
+        assert "GH_TOKEN" not in comment["run"] and "github.token" not in comment["run"]
 
 
 def test_advisory_review_comment_step_posts_review_body():
@@ -1358,3 +1365,567 @@ def test_run_reviewer_tool_lists_match_reviewer_definition(monkeypatch):
     assert allowed, "run-reviewer.py ALLOWED_TOOLS is empty"
     assert allowed <= tools, f"allowed in CI but not in the definition: {sorted(allowed - tools)}"
     assert not disallowed & tools, f"disallowed in CI but granted by the definition: {sorted(disallowed & tools)}"
+
+
+# ---------------------------------------------------------------------------
+# Module 4.2: audit trail (scripts/build-audit-trail.py and the audit-trail
+# job). The script runs as a subprocess in tmp_path with fixture artifacts;
+# nothing is written inside the repository.
+# ---------------------------------------------------------------------------
+
+BUILD_AUDIT_TRAIL = REPO_ROOT / "scripts" / "build-audit-trail.py"
+AUDIT_SHA = "abc1234def5678"
+SECRET_NAME = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)", re.IGNORECASE)
+RUN_LINK_ENV = ("GITHUB_SERVER_URL", "GITHUB_REPOSITORY", "GITHUB_RUN_ID")
+PR_ARGS = {
+    "--sha": AUDIT_SHA,
+    "--event": "pull_request",
+    "--pr": "42",
+    "--changed-files": "scripts/x.py eval/test_policy.py",
+    "--touches-policy": "false",
+    "--requires-governed-check": "true",
+    "--classifier-result": "success",
+    "--policy-result": "success",
+    "--governed-result": "success",
+    "--review-result": "success",
+    "--agent-affecting": "true",
+    "--eval-result": "success",
+    "--deterministic-outcome": "success",
+    "--rubric-outcome": "success",
+}
+RUBRIC_SCORED = {
+    "deterministic": {"passed": True},
+    "rubric_ran": True,
+    "rubric": {
+        "scores": [
+            {"dimension": "correctness", "score": 4, "justification": "JUSTIFICATION-TEXT",
+             "pass_threshold": 3, "passed": True},
+            {"dimension": "scope", "score": 2, "justification": "JUSTIFICATION-TEXT",
+             "pass_threshold": 3, "passed": False},
+        ],
+        "total": 6,
+        "maximum": 10,
+        "overall_pass_threshold": 6,
+        "passed": True,
+    },
+}
+REVIEW_AUDIT = {
+    "timestamp": "2026-11-15T00:00:00+00:00",
+    "mode": "advisory",
+    "changed_files": ["scripts/x.py", "logo.png"],
+    "files": [
+        {"path": "scripts/x.py", "included": True, "reason": "included", "chars": 10},
+        {"path": "logo.png", "included": False, "reason": "skipped_non_text_extension", "chars": 0},
+    ],
+    "anthropic_key_present": True,
+    "output": "/out/review-output.md",
+    "exit_behavior": "always_zero_advisory",
+    "reviewer": {
+        "mechanism": "claude -p --agent marketradar-code-reviewer", "ran": True, "exit_code": 0,
+        "is_error": False, "num_turns": 3, "total_cost_usd": 0.01, "subtype": "success", "error": None,
+    },
+    "mcp": {
+        "servers_configured": ["retrieval"], "agent_role": "reviewer",
+        "audit_log": "mcp-audit/retrieval-audit-log.jsonl", "audit_log_present": True, "audit_log_records": 2,
+    },
+}
+MCP_SUCCESS = {
+    "timestamp": "2026-11-15T00:00:01+00:00", "event": "retrieval_success", "operation": "retrieve",
+    "role": "reviewer", "outcome": "retrieval_success", "detail": "2 result(s) returned at the 'internal' ceiling",
+    "policy_reference": "docs/governance-policy.md",
+}
+MCP_DENIAL = {
+    "timestamp": "2026-11-15T00:00:02+00:00", "event": "authorization_denied", "operation": "retrieve",
+    "role": "project-manager", "outcome": "authorization_denied", "detail": "role is not granted retrieval",
+    "policy_reference": "docs/governance-policy.md",
+}
+
+
+def _pytest_report(passed, failed):
+    return {
+        "exitcode": 1 if failed else 0,
+        "summary": {"passed": passed, "failed": failed, "total": passed + failed},
+        "tests": [{} for _ in range(passed + failed)],
+    }
+
+
+def _write_artifacts(tmp_path, rubric=RUBRIC_SCORED, review_audit=REVIEW_AUDIT, mcp_records=None):
+    artifacts = tmp_path / "ci-artifacts"
+    artifacts.mkdir()
+    (artifacts / "policy-report.json").write_text(json.dumps(_pytest_report(200, 0)), encoding="utf-8")
+    (artifacts / "deterministic-report.json").write_text(json.dumps(_pytest_report(14, 1)), encoding="utf-8")
+    (artifacts / "governed-file-report.json").write_text(json.dumps(_pytest_report(5, 0)), encoding="utf-8")
+    if rubric is not None:
+        (artifacts / "rubric-report.json").write_text(json.dumps(rubric), encoding="utf-8")
+    (artifacts / "review-audit.json").write_text(json.dumps(review_audit), encoding="utf-8")
+    (artifacts / "review-output.md").write_text("REVIEW-BODY-TEXT\n", encoding="utf-8")
+    if mcp_records is not None:
+        log_dir = artifacts / "mcp-audit"
+        log_dir.mkdir()
+        lines = [json.dumps(record) for record in mcp_records] + ["not json"]
+        (log_dir / "retrieval-audit-log.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return artifacts
+
+
+def _run_audit_trail(tmp_path, overrides=None, extra_env=None):
+    args = dict(PR_ARGS)
+    args.update(overrides or {})
+    args["--artifacts"] = str(tmp_path / "ci-artifacts")
+    summary = tmp_path / "summary.md"
+    args["--summary"] = str(summary)
+    env = {
+        name: value for name, value in os.environ.items()
+        if name not in RUN_LINK_ENV and name != "GITHUB_STEP_SUMMARY" and not SECRET_NAME.search(name)
+    }
+    env.update(extra_env or {})
+    command = [sys.executable, "-I", str(BUILD_AUDIT_TRAIL)]
+    for name, value in args.items():
+        if value is not None:
+            command += [name, value]
+    result = subprocess.run(command, cwd=tmp_path, env=env, capture_output=True, text=True, timeout=60)
+    safe_sha = re.sub(r"[^A-Za-z0-9._-]", "_", args["--sha"])
+    trail_path = tmp_path / f"ci-audit-trail-{safe_sha}.json"
+    trail_text = trail_path.read_text(encoding="utf-8") if trail_path.exists() else ""
+    summary_text = summary.read_text(encoding="utf-8") if summary.exists() else ""
+    return result, trail_text, summary_text
+
+
+def _summary_check_rows(summary_text):
+    """Map check name -> (kind, status, raw result, reason or None) from the summary table."""
+    rows = {}
+    pattern = r"^\| (\w+) \| (gating|advisory) \| ([^|]+?) \| ([^|]+?) \|(?: ([^|]+?) \|)?$"
+    for match in re.finditer(pattern, summary_text, re.M):
+        rows[match.group(1)] = match.group(2, 3, 4, 5)
+    return rows
+
+
+def test_audit_trail_full_pull_request_run(tmp_path):
+    _write_artifacts(tmp_path, mcp_records=[MCP_SUCCESS, MCP_DENIAL])
+    result, trail_text, summary = _run_audit_trail(tmp_path)
+    assert result.returncode == 0, result.stderr
+    trail = json.loads(trail_text)
+
+    meta = trail["metadata"]
+    assert (meta["sha"], meta["event"], meta["pull_request"]) == (AUDIT_SHA, "pull_request", "42")
+    datetime.datetime.fromisoformat(meta["timestamp"])
+    assert trail["change_classification"]["changed_files"] == ["scripts/x.py", "eval/test_policy.py"]
+
+    checks = trail["checks"]
+    assert set(checks) == {
+        "change_classification", "policy_gate", "governed_file_gate", "eval_gate",
+        "eval_deterministic", "eval_rubric", "advisory_review",
+    }
+    for check in checks.values():
+        assert check["status"] == "success" and check["raw_result"] == "success"
+        assert "reason" not in check
+    assert {name for name, check in checks.items() if check["gating"]} == {
+        "change_classification", "policy_gate", "governed_file_gate", "eval_gate", "eval_deterministic",
+    }
+    assert "subtype" not in trail["reviewer"]
+    assert trail["results"]["policy_gate"] == "success"
+
+    assert trail["policy_results"] == {
+        "report_present": True, "exitcode": 0, "passed": 200, "failed": 0, "error": 0, "skipped": 0, "total": 200,
+    }
+    assert trail["deterministic_results"]["passed"] == 14
+    assert trail["deterministic_results"]["failed"] == 1
+    assert trail["governed_results"]["total"] == 5
+
+    rubric = trail["rubric"]
+    assert rubric["status"] == "scored"
+    assert rubric["scores"][0] == {"dimension": "correctness", "score": 4, "pass_threshold": 3, "passed": True}
+    assert (rubric["total"], rubric["maximum"], rubric["overall_pass_threshold"], rubric["passed"]) == (6, 10, 6, True)
+    assert "JUSTIFICATION-TEXT" not in trail_text
+
+    mcp = trail["mcp_actions"]
+    assert mcp["mcp_audit_log_present"] is True
+    assert "note" not in mcp
+    assert mcp["unparseable_lines"] == 1
+    assert [(a["server"], a["role"], a["operation"], a["outcome"]) for a in mcp["actions"]] == [
+        ("retrieval", "reviewer", "retrieve", "retrieval_success"),
+        ("retrieval", "project-manager", "retrieve", "authorization_denied"),
+    ]
+    assert all("detail" not in action for action in mcp["actions"])
+    assert len(mcp["authorization_denials"]) == 1
+    denial = mcp["authorization_denials"][0]
+    assert denial["role"] == "project-manager" and denial["detail"] == "role is not granted retrieval"
+
+    reviewer = trail["reviewer"]
+    assert reviewer["ran"] is True
+    assert reviewer["mechanism"] == "claude -p --agent marketradar-code-reviewer"
+    assert reviewer["files_reviewed"] == ["scripts/x.py"]
+    assert reviewer["mcp_audit_log_records"] == 2
+    assert "review_audit" not in trail
+    assert "REVIEW-BODY-TEXT" not in trail_text and "REVIEW-BODY-TEXT" not in summary
+    assert trail["redactions"] == 0
+
+    assert "abc1234" in summary and "PR #42" in summary
+    assert "project-manager" in summary and "audit-trail" in summary
+    assert "JUSTIFICATION-TEXT" not in summary
+
+
+def test_audit_trail_push_docs_only_run_is_not_triggered(tmp_path):
+    overrides = {
+        "--event": "push",
+        "--pr": "0",
+        "--changed-files": "docs/ci-step-design.md",
+        "--requires-governed-check": "false",
+        "--agent-affecting": "false",
+        "--review-result": "skipped",
+        "--eval-result": "success",
+        "--deterministic-outcome": "",
+        "--rubric-outcome": "skipped",
+    }
+    result, trail_text, summary = _run_audit_trail(tmp_path, overrides)
+    assert result.returncode == 0, result.stderr
+    trail = json.loads(trail_text)
+    checks = trail["checks"]
+    assert checks["policy_gate"]["status"] == "success"
+    for name in ("governed_file_gate", "eval_gate", "eval_deterministic", "eval_rubric", "advisory_review"):
+        assert checks[name]["status"] == "not_triggered", name
+    assert checks["eval_deterministic"]["raw_result"] == ""
+    assert trail["rubric"] == {"status": "not_triggered"}
+    assert trail["policy_results"]["report_present"] is False
+    assert trail["mcp_actions"]["mcp_audit_log_present"] is False
+    assert trail["mcp_actions"]["actions"] == []
+    assert trail["mcp_actions"]["note"] == "No MCP audit log: the reviewer made no MCP calls or did not run."
+    assert "not triggered" in summary
+    assert "failure" not in summary.lower()
+
+
+def test_audit_trail_rubric_not_scored(tmp_path):
+    rubric = {
+        "deterministic": {"passed": False},
+        "rubric_ran": False,
+        "rubric": None,
+        "reason": "deterministic pre-check failed: execution_health",
+    }
+    _write_artifacts(tmp_path, rubric=rubric)
+    result, trail_text, summary = _run_audit_trail(tmp_path, {"--rubric-outcome": "failure"})
+    assert result.returncode == 0, result.stderr
+    trail = json.loads(trail_text)
+    assert trail["rubric"] == {
+        "status": "not_scored",
+        "reason": "deterministic pre-check failed: execution_health",
+        "deterministic_precheck_passed": False,
+    }
+    assert trail["checks"]["eval_rubric"]["status"] == "failure"
+    assert trail["checks"]["eval_rubric"]["gating"] is False
+    assert "execution_health" in summary
+
+
+def test_audit_trail_redacts_secret_values(tmp_path):
+    secret = "supersecretvalue123"
+    review_audit = json.loads(json.dumps(REVIEW_AUDIT))
+    review_audit["unexpected_field"] = f"leaked {secret}"
+    review_audit["reviewer"]["error"] = f"exit_code_1: {secret}"
+    denial = dict(MCP_DENIAL, detail=f"denied for {secret}")
+    _write_artifacts(tmp_path, review_audit=review_audit, mcp_records=[denial])
+    result, trail_text, summary = _run_audit_trail(tmp_path, extra_env={"FAKE_API_TOKEN": secret})
+    assert result.returncode == 0, result.stderr
+    assert secret not in trail_text
+    assert secret not in summary
+    assert secret not in result.stdout and secret not in result.stderr
+    trail = json.loads(trail_text)
+    assert trail["redactions"] >= 1
+    assert trail["reviewer"]["error"] == "exit_code_1: [REDACTED]"
+    assert trail["mcp_actions"]["authorization_denials"][0]["detail"] == "denied for [REDACTED]"
+    assert "FAKE_API_TOKEN" not in trail_text and "unexpected_field" not in trail_text
+
+
+@pytest.mark.parametrize("scenario", ["pull-request", "push-docs-only"])
+def test_audit_trail_summary_matches_check_statuses(scenario, tmp_path):
+    if scenario == "pull-request":
+        _write_artifacts(tmp_path, mcp_records=[MCP_SUCCESS])
+        overrides = {"--deterministic-outcome": "failure", "--eval-result": "failure"}
+    else:
+        overrides = {
+            "--event": "push", "--pr": "0", "--requires-governed-check": "false",
+            "--agent-affecting": "false", "--review-result": "skipped",
+            "--deterministic-outcome": "skipped", "--rubric-outcome": "skipped",
+        }
+    result, trail_text, summary = _run_audit_trail(tmp_path, overrides)
+    assert result.returncode == 0, result.stderr
+    checks = json.loads(trail_text)["checks"]
+    rows = _summary_check_rows(summary)
+    assert set(rows) == set(checks)
+    for name, check in checks.items():
+        kind, shown, raw, reason = rows[name]
+        assert kind == ("gating" if check["gating"] else "advisory")
+        expected = "not triggered" if check["status"] == "not_triggered" else check["status"]
+        assert shown == expected, name
+        assert raw == (check["raw_result"] or "(empty)"), name
+        assert reason is None, name
+
+
+def test_audit_trail_step_passes_changed_files_via_env():
+    job = _workflow()["jobs"]["audit-trail"]
+    step = next(step for step in job["steps"] if "build-audit-trail.py" in str(step.get("run", "")))
+    assert step["env"]["CHANGED_FILES"] == "${{ needs.change-type-check.outputs.changed-files }}"
+    assert '--changed-files "$CHANGED_FILES"' in step["run"]
+    assert "outputs.changed-files" not in step["run"]
+    assert '--classifier-result "${{ needs.change-type-check.result }}"' in step["run"]
+
+
+def test_audit_trail_reports_failures_even_when_not_triggered(tmp_path):
+    overrides = {
+        "--event": "push", "--pr": "0",
+        "--requires-governed-check": "false", "--agent-affecting": "false",
+        "--governed-result": "failure", "--eval-result": "failure",
+        "--deterministic-outcome": "cancelled", "--rubric-outcome": "failure",
+        "--review-result": "failure",
+    }
+    result, trail_text, summary = _run_audit_trail(tmp_path, overrides)
+    assert result.returncode == 0, result.stderr
+    checks = json.loads(trail_text)["checks"]
+    assert checks["governed_file_gate"]["status"] == "failure"
+    assert checks["eval_gate"]["status"] == "failure"
+    assert checks["eval_deterministic"]["status"] == "cancelled"
+    assert checks["eval_rubric"]["status"] == "failure"
+    assert checks["advisory_review"]["status"] == "failure"
+    rows = _summary_check_rows(summary)
+    assert rows["governed_file_gate"][1] == "failure"
+
+
+def test_audit_trail_explains_skips_after_classifier_failure(tmp_path):
+    overrides = {
+        "--classifier-result": "failure", "--policy-result": "skipped", "--governed-result": "skipped",
+        "--eval-result": "skipped", "--deterministic-outcome": "", "--rubric-outcome": "",
+        "--review-result": "skipped", "--requires-governed-check": "", "--agent-affecting": "",
+    }
+    result, trail_text, summary = _run_audit_trail(tmp_path, overrides)
+    assert result.returncode == 0, result.stderr
+    checks = json.loads(trail_text)["checks"]
+    assert checks["change_classification"] == {"status": "failure", "raw_result": "failure", "gating": True}
+    for name, check in checks.items():
+        if name == "change_classification":
+            continue
+        assert check["status"] == "not_triggered", name
+        assert check["reason"] == "skipped: change classification did not succeed", name
+    rows = _summary_check_rows(summary)
+    assert rows["policy_gate"][3] == "skipped: change classification did not succeed"
+
+
+def test_audit_trail_explains_skips_after_policy_failure(tmp_path):
+    overrides = {
+        "--policy-result": "failure", "--governed-result": "skipped", "--eval-result": "skipped",
+        "--deterministic-outcome": "", "--rubric-outcome": "", "--review-result": "skipped",
+    }
+    result, trail_text, _ = _run_audit_trail(tmp_path, overrides)
+    assert result.returncode == 0, result.stderr
+    checks = json.loads(trail_text)["checks"]
+    assert checks["policy_gate"]["status"] == "failure"
+    assert "reason" not in checks["change_classification"]
+    for name in ("governed_file_gate", "eval_gate", "eval_deterministic", "eval_rubric", "advisory_review"):
+        assert checks[name]["status"] == "not_triggered", name
+        assert checks[name]["reason"] == "skipped: policy_gate did not succeed", name
+
+
+def test_audit_trail_explains_rubric_skip_after_deterministic_failure(tmp_path):
+    overrides = {"--eval-result": "failure", "--deterministic-outcome": "failure", "--rubric-outcome": "skipped"}
+    result, trail_text, _ = _run_audit_trail(tmp_path, overrides)
+    assert result.returncode == 0, result.stderr
+    trail = json.loads(trail_text)
+    rubric_check = trail["checks"]["eval_rubric"]
+    assert rubric_check["status"] == "not_triggered"
+    assert rubric_check["reason"] == "skipped: deterministic evaluation did not succeed"
+    assert trail["rubric"] == {"status": "not_triggered"}
+
+
+def test_audit_trail_rubric_failed_without_report(tmp_path):
+    result, trail_text, summary = _run_audit_trail(tmp_path, {"--rubric-outcome": "failure"})
+    assert result.returncode == 0, result.stderr
+    trail = json.loads(trail_text)
+    assert trail["checks"]["eval_rubric"]["status"] == "failure"
+    assert trail["rubric"] == {"status": "failed_no_report"}
+    assert "Rubric (advisory):** not triggered" not in summary
+
+
+def test_audit_trail_tolerates_wrong_shapes_and_bad_jsonl(tmp_path):
+    artifacts = tmp_path / "ci-artifacts"
+    (artifacts / "mcp-audit").mkdir(parents=True)
+    (artifacts / "policy-report.json").write_text(json.dumps({"exitcode": 0, "summary": ["x"]}), encoding="utf-8")
+    (artifacts / "deterministic-report.json").write_text(json.dumps([1, 2, 3]), encoding="utf-8")
+    (artifacts / "governed-file-report.json").write_text("{not json", encoding="utf-8")
+    (artifacts / "rubric-report.json").write_text(
+        json.dumps({"rubric_ran": True, "deterministic": "yes",
+                    "rubric": {"scores": "not-a-list", "total": 1, "maximum": 5}}),
+        encoding="utf-8",
+    )
+    (artifacts / "review-audit.json").write_text(
+        json.dumps({"mode": "advisory", "reviewer": "not-a-dict", "mcp": [1], "files": {"a": 1}}),
+        encoding="utf-8",
+    )
+    log = (
+        json.dumps(MCP_SUCCESS).encode("utf-8") + b"\n"
+        + b"\xff\xfe invalid utf-8\n"
+        + b"[" * 100000 + b"\n"
+        + b"[1, 2]\n"
+        + json.dumps(MCP_DENIAL).encode("utf-8") + b"\n"
+    )
+    (artifacts / "mcp-audit" / "retrieval-audit-log.jsonl").write_bytes(log)
+
+    sha = "feature/branch:abc"
+    result, trail_text, summary = _run_audit_trail(tmp_path, {"--sha": sha})
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "ci-audit-trail-feature_branch_abc.json").is_file()
+    assert not (tmp_path / "ci-audit-trail-feature").exists()
+    trail = json.loads(trail_text)
+    assert trail["metadata"]["sha"] == sha
+    assert trail["policy_results"]["passed"] == 0 and trail["policy_results"]["report_present"] is True
+    assert trail["deterministic_results"]["report_present"] is False
+    assert trail["governed_results"]["report_present"] is False
+    assert trail["rubric"]["status"] == "scored" and trail["rubric"]["scores"] == []
+    reviewer = trail["reviewer"]
+    assert reviewer["ran"] is None and reviewer["files_reviewed"] == []
+    assert reviewer["mcp_servers_configured"] is None
+    mcp = trail["mcp_actions"]
+    assert mcp["unparseable_lines"] == 3
+    assert [action["event"] for action in mcp["actions"]] == ["retrieval_success", "authorization_denied"]
+    assert len(mcp["authorization_denials"]) == 1
+    assert "ci-audit-trail-feature_branch_abc.json" in summary
+
+
+# Module 4.2: the audit-trail job posts the audit summary as a PR comment.
+
+AUDIT_JOB_NEEDS = {"change-type-check", "policy-gate", "eval-gate", "governed-file-gate", "advisory-review"}
+COMMENT_MARKER_LINE = "<!-- marketradar-ci-audit-trail -->"
+RUN_LINK = {
+    "GITHUB_SERVER_URL": "https://github.com",
+    "GITHUB_REPOSITORY": "octo/marketradar",
+    "GITHUB_RUN_ID": "123456",
+}
+
+
+def _audit_job():
+    return _workflow()["jobs"]["audit-trail"]
+
+
+def _audit_build_step(job):
+    return next(step for step in job["steps"] if "build-audit-trail.py" in str(step.get("run", "")))
+
+
+def _audit_upload_index(job):
+    return next(
+        index for index, step in enumerate(job["steps"])
+        if str(step.get("uses", "")).startswith("actions/upload-artifact")
+    )
+
+
+def test_audit_trail_job_keeps_needs_and_always():
+    job = _audit_job()
+    assert set(job["needs"]) == AUDIT_JOB_NEEDS
+    assert job["if"] == "always()"
+
+
+def test_audit_trail_checkout_does_not_persist_credentials():
+    checkout = next(
+        step for step in _audit_job()["steps"] if str(step.get("uses", "")).startswith("actions/checkout")
+    )
+    assert checkout["with"]["persist-credentials"] is False
+
+
+def test_audit_trail_build_step_writes_comment_file():
+    assert "--comment-file audit-pr-comment.md" in _audit_build_step(_audit_job())["run"]
+
+
+def test_audit_trail_upload_always_and_error_if_missing():
+    job = _audit_job()
+    upload = job["steps"][_audit_upload_index(job)]
+    assert upload["if"] == "always()"
+    assert upload["with"]["if-no-files-found"] == "error"
+    assert upload["with"]["path"] == "ci-audit-trail-*.json"
+    assert upload["with"]["name"] == "audit-trail"
+
+
+def test_audit_trail_comment_step_posts_after_upload():
+    job = _audit_job()
+    names = [step.get("name") for step in job["steps"]]
+    comment_index = names.index(AUDIT_COMMENT_STEP_NAME)
+    assert comment_index > _audit_upload_index(job)
+    step = job["steps"][comment_index]
+    assert step.get("continue-on-error") is True
+    for fragment in ("always()", "pull_request", "hashFiles('audit-pr-comment.md')"):
+        assert fragment in step["if"], fragment
+    assert "gh pr comment" in step["run"]
+    assert "--body-file audit-pr-comment.md" in step["run"]
+    for index, other in enumerate(job["steps"]):
+        if index != comment_index:
+            text = json.dumps(other)
+            assert "GH_TOKEN" not in text and "github.token" not in text, other.get("name")
+
+
+def _comment_rows(text):
+    return _summary_check_rows(text)
+
+
+def test_audit_comment_file_matches_summary_and_links_run(tmp_path):
+    _write_artifacts(tmp_path, mcp_records=[MCP_SUCCESS, MCP_DENIAL])
+    comment = tmp_path / "audit-pr-comment.md"
+    result, _, summary = _run_audit_trail(
+        tmp_path, {"--comment-file": str(comment), "--deterministic-outcome": "failure"}, extra_env=RUN_LINK
+    )
+    assert result.returncode == 0, result.stderr
+    body = comment.read_text(encoding="utf-8")
+    assert body.splitlines()[0] == COMMENT_MARKER_LINE
+    rows = _comment_rows(body)
+    assert rows and rows == _summary_check_rows(summary)
+    assert rows["eval_deterministic"][1] == "failure"
+    assert (
+        "Full audit trail: artifact `audit-trail` on "
+        "[workflow run](https://github.com/octo/marketradar/actions/runs/123456)"
+    ) in body
+    assert len(body) <= 60_000
+
+
+def test_audit_comment_file_omits_run_link_without_run_env(tmp_path):
+    comment = tmp_path / "audit-pr-comment.md"
+    partial = {"GITHUB_SERVER_URL": "https://github.com", "GITHUB_REPOSITORY": "octo/marketradar"}
+    result, _, _ = _run_audit_trail(tmp_path, {"--comment-file": str(comment)}, extra_env=partial)
+    assert result.returncode == 0, result.stderr
+    body = comment.read_text(encoding="utf-8")
+    assert body.startswith(COMMENT_MARKER_LINE + "\n")
+    assert "workflow run" not in body and "/actions/runs/" not in body
+
+
+def test_audit_comment_file_redacts_secret(tmp_path):
+    secret = "supersecretvalue123"
+    review_audit = json.loads(json.dumps(REVIEW_AUDIT))
+    review_audit["unexpected_field"] = f"leaked {secret}"
+    review_audit["reviewer"]["error"] = f"exit_code_1: {secret}"
+    denial = dict(MCP_DENIAL, detail=f"denied for {secret}", role=f"role-{secret}")
+    _write_artifacts(tmp_path, review_audit=review_audit, mcp_records=[denial])
+    comment = tmp_path / "audit-pr-comment.md"
+    result, trail_text, summary = _run_audit_trail(
+        tmp_path, {"--comment-file": str(comment)}, extra_env={"FAKE_API_TOKEN": secret}
+    )
+    assert result.returncode == 0, result.stderr
+    body = comment.read_text(encoding="utf-8")
+    assert secret not in body and secret not in summary and secret not in trail_text
+    assert "[REDACTED]" in body
+
+
+def test_audit_comment_unwritable_path_still_writes_trail(tmp_path):
+    comment = tmp_path / "missing-dir" / "audit-pr-comment.md"
+    result, trail_text, summary = _run_audit_trail(tmp_path, {"--comment-file": str(comment)})
+    assert result.returncode == 0, result.stderr
+    assert trail_text and json.loads(trail_text)["metadata"]["sha"] == AUDIT_SHA
+    assert summary
+    assert not comment.exists()
+
+
+def test_audit_comment_is_capped(tmp_path):
+    denials = [dict(MCP_DENIAL, role=f"project-manager-{index:05d}") for index in range(2000)]
+    _write_artifacts(tmp_path, mcp_records=denials)
+    comment = tmp_path / "audit-pr-comment.md"
+    result, trail_text, summary = _run_audit_trail(
+        tmp_path, {"--comment-file": str(comment)}, extra_env=RUN_LINK
+    )
+    assert result.returncode == 0, result.stderr
+    assert len(summary) > 60_000, "fixture must exceed the cap"
+    body = comment.read_text(encoding="utf-8")
+    assert len(body) <= 60_000
+    assert body.startswith(COMMENT_MARKER_LINE + "\n")
+    assert "Comment truncated at 60,000 characters" in body
+    assert "/actions/runs/123456" in body
+    assert len(json.loads(trail_text)["mcp_actions"]["authorization_denials"]) == 2000

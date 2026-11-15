@@ -242,8 +242,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: [change-type-check, policy-gate, eval-gate, governed-file-gate, advisory-review]
     if: always()
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-python@v5
         with:
@@ -256,12 +261,15 @@ jobs:
           merge-multiple: true
 
       - name: Build audit trail
+        env:
+          CHANGED_FILES: ${{ needs.change-type-check.outputs.changed-files }}
         run: |
           python3 scripts/build-audit-trail.py \
             --sha "${{ github.sha }}" \
             --event "${{ github.event_name }}" \
             --pr "${{ github.event.pull_request.number || 0 }}" \
-            --changed-files "${{ needs.change-type-check.outputs.changed-files }}" \
+            --changed-files "$CHANGED_FILES" \
+            --classifier-result "${{ needs.change-type-check.result }}" \
             --touches-policy "${{ needs.change-type-check.outputs.touches-policy }}" \
             --requires-governed-check "${{ needs.change-type-check.outputs.requires-governed-check }}" \
             --policy-result "${{ needs.policy-gate.result }}" \
@@ -271,12 +279,23 @@ jobs:
             --rubric-outcome "${{ needs.eval-gate.outputs.rubric-outcome }}" \
             --governed-result "${{ needs.governed-file-gate.result }}" \
             --review-result "${{ needs.advisory-review.result }}" \
-            --artifacts ci-artifacts
+            --artifacts ci-artifacts \
+            --comment-file audit-pr-comment.md
 
       - name: Upload audit trail
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: audit-trail
           path: ci-audit-trail-*.json
           retention-days: 90
           if-no-files-found: error
+
+      # Fork PRs get a read-only token; this step may fail without affecting the upload.
+      - name: Post audit summary comment
+        if: always() && github.event_name == 'pull_request' && hashFiles('audit-pr-comment.md') != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file audit-pr-comment.md

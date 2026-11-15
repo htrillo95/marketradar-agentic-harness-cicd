@@ -15,13 +15,13 @@ This document classifies three CI steps as gating or advisory. It describes what
 | `eval-gate` | Evaluation Harness | Deterministic pytest in Docker (gating) and the Module 3 rubric judge via OpenRouter (advisory step) on agent-affecting changes; a skip notice on documentation-only changes | Gating (deterministic step); rubric step `continue-on-error: true` |
 | `governed-file-gate` | Governed File Check | `python -m pytest eval/test_governed_files.py -v`, only when governed files changed | Gating when it runs |
 | `advisory-review` | Advisory Code Review | `python scripts/run-reviewer.py` in the course image, which runs `claude -p --agent marketradar-code-reviewer` with only the retrieval MCP server registered, then posts the review as a PR comment with `gh pr comment`; pull requests only; job-scoped `permissions: contents: read, pull-requests: write` | Advisory (`continue-on-error: true`; the comment step also has `continue-on-error: true`) |
-| `audit-trail` | Audit Trail | `scripts/build-audit-trail.py` over the downloaded artifacts | Always runs (`if: always()`) |
+| `audit-trail` | Audit Trail | `scripts/build-audit-trail.py` over the downloaded artifacts; writes the job summary and, on `pull_request` events, posts a concise PR comment with `gh pr comment` after the artifact upload; job-scoped `permissions: contents: read, pull-requests: write` | Always runs (`if: always()`); the comment step has `continue-on-error: true` |
 
 Gaps found while inspecting the repository:
 
 - **No Pipeline Integrity job exists.** `scripts/check-pipeline-integrity.py` expects jobs named `eval-gate` and `pipeline-integrity`, and `README.md` lists "Evaluation Harness" and "Pipeline Integrity Check" as required status checks. `eval-gate` now exists; `pipeline-integrity` does not.
 - **No job sets `timeout-minutes`**, so GitHub's default job timeout applies.
-- **The workflow has no workflow-level `permissions:` block.** Every job receives a `GITHUB_TOKEN`; jobs without a `permissions:` block get the repository's default token permissions. Only `advisory-review` declares job-level permissions and explicitly requests `pull-requests: write` (with `contents: read`). Whether the other jobs' tokens can write depends on the repository's default token setting, which has not been verified here.
+- **The workflow has no workflow-level `permissions:` block.** Every job receives a `GITHUB_TOKEN`; jobs without a `permissions:` block get the repository's default token permissions. Only `advisory-review` and `audit-trail` declare job-level permissions, each `contents: read` and `pull-requests: write`; no other job and no workflow-level block does. Whether the other jobs' tokens can write depends on the repository's default token setting, which has not been verified here.
 
 Classification rule used below: a step is **gating** only if it is deterministic and has been run repeatedly with stable results; a model-backed step, or one that has not been shown to be stable, is **advisory**.
 
@@ -68,8 +68,8 @@ Classification rule used below: a step is **gating** only if it is deterministic
 - **Time limit:** 15 minutes for the job, including the course-image build. The script sets a 600-second timeout on the `claude` subprocess and limits the subagent to 20 turns, which leaves about 5 minutes for the image build, the comment and the upload. This is a target only: no `timeout-minutes` is configured today.
 - **Credentials:** `ANTHROPIC_API_KEY` and the job's `GITHUB_TOKEN`, following least privilege:
   - `ANTHROPIC_API_KEY` is stored as a repository secret and exposed only in the `env:` of the single "Run advisory agentic review" step, not at job or workflow level. It is passed into the container by name (`-e ANTHROPIC_API_KEY`) and used only by the `claude` CLI; the script never writes it to any output. The workspace is mounted read-only and the only writable mount is the output directory.
-  - Every job receives a `GITHUB_TOKEN`. This job declares `permissions: contents: read, pull-requests: write` and is the only job that explicitly requests `pull-requests: write`; the other jobs get the repository's default token permissions, so whether they can write depends on the repository's default token setting (unverified).
-  - The "Post review comment" step is the only step that references the token explicitly, as `GH_TOKEN` in its `env:`; it runs on the runner, outside the reviewer container. `actions/checkout` also uses the token to fetch the repository, but with `persist-credentials: false` it is not stored in `.git/config`, so the subagent cannot read it through the read-only workspace mount.
+  - Every job receives a `GITHUB_TOKEN`. This job and the `audit-trail` job each declare `permissions: contents: read, pull-requests: write` and are the only jobs that explicitly request `pull-requests: write`; the other jobs get the repository's default token permissions, so whether they can write depends on the repository's default token setting (unverified).
+  - The "Post review comment" step and the `audit-trail` job's "Post audit summary comment" step are the only steps that reference the token explicitly, each as `GH_TOKEN` in its `env:`. The review comment step runs on the runner, outside the reviewer container. `actions/checkout` also uses the token to fetch the repository, but with `persist-credentials: false` it is not stored in `.git/config`, so the subagent cannot read it through the read-only workspace mount.
   - `ANTHROPIC_API_KEY` is not available to the policy, Evaluation Harness, governed-file or audit-trail jobs.
   - GitHub does not pass secrets to workflows triggered from forks, and fork PRs get a read-only `GITHUB_TOKEN`. On fork PRs the script writes the "no review performed" note instead of a review, and the comment step fails without failing anything.
   - Recommended, not yet applied: use a key dedicated to CI review with a spend limit.
@@ -78,9 +78,10 @@ Classification rule used below: a step is **gating** only if it is deterministic
 
 - No GitHub Actions run was inspected from this environment, so it is not confirmed that the advisory review has produced a real review in CI.
 - Course-image build time on GitHub runners is unmeasured.
-- Job timeouts are design decisions in this document, not yet implemented in `ci.yml`. The only `permissions:` block implemented is the job-level one on `advisory-review`.
+- Job timeouts are design decisions in this document, not yet implemented in `ci.yml`. The only `permissions:` blocks implemented are the job-level ones on `advisory-review` and `audit-trail`.
 - The `eval-gate` job and the OpenRouter judge have not run on GitHub Actions; the OpenRouter model slug is unverified.
 - The reviewer subagent run is unverified: the Claude CLI could not be executed in the development container, so the `claude -p --agent marketradar-code-reviewer` invocation, the `--agent` CLI behaviour and the subagent's JSON output have only been exercised through a fake `subprocess.run` in `eval/test_policy.py`.
 - MCP retrieval in CI is unverified: it is not confirmed that the retrieval server starts under `--strict-mcp-config` or that the subagent calls it.
 - PR comment posting via `gh pr comment` is unverified.
 - The presence of the `ANTHROPIC_API_KEY` repository secret is unverified.
+- The `audit-trail` PR comment ("Post audit summary comment") has not been observed in GitHub Actions. Fork PRs get a read-only `GITHUB_TOKEN`, so on fork PRs that step is expected to fail without affecting the artifact upload.
