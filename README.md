@@ -525,3 +525,4 @@ docker run -it --rm -p 8501:8501 -p 8502:8502 \
   -v "$PWD":/workspace \
   heatonresearch/agentic_engineer_4:latest
 ```
+<!-- Audit trail PR comment verification -->
