@@ -1385,6 +1385,7 @@ PR_ARGS = {
     "--touches-policy": "false",
     "--requires-governed-check": "true",
     "--classifier-result": "success",
+    "--integrity-result": "success",
     "--policy-result": "success",
     "--governed-result": "success",
     "--review-result": "success",
@@ -1512,14 +1513,15 @@ def test_audit_trail_full_pull_request_run(tmp_path):
 
     checks = trail["checks"]
     assert set(checks) == {
-        "change_classification", "policy_gate", "governed_file_gate", "eval_gate",
+        "change_classification", "pipeline_integrity", "policy_gate", "governed_file_gate", "eval_gate",
         "eval_deterministic", "eval_rubric", "advisory_review",
     }
     for check in checks.values():
         assert check["status"] == "success" and check["raw_result"] == "success"
         assert "reason" not in check
     assert {name for name, check in checks.items() if check["gating"]} == {
-        "change_classification", "policy_gate", "governed_file_gate", "eval_gate", "eval_deterministic",
+        "change_classification", "pipeline_integrity", "policy_gate", "governed_file_gate", "eval_gate",
+        "eval_deterministic",
     }
     assert "subtype" not in trail["reviewer"]
     assert trail["results"]["policy_gate"] == "success"
@@ -1697,8 +1699,10 @@ def test_audit_trail_explains_skips_after_classifier_failure(tmp_path):
     assert result.returncode == 0, result.stderr
     checks = json.loads(trail_text)["checks"]
     assert checks["change_classification"] == {"status": "failure", "raw_result": "failure", "gating": True}
+    # pipeline-integrity has no upstream job, so the classifier failure does not skip it.
+    assert checks["pipeline_integrity"] == {"status": "success", "raw_result": "success", "gating": True}
     for name, check in checks.items():
-        if name == "change_classification":
+        if name in ("change_classification", "pipeline_integrity"):
             continue
         assert check["status"] == "not_triggered", name
         assert check["reason"] == "skipped: change classification did not succeed", name
@@ -1788,7 +1792,9 @@ def test_audit_trail_tolerates_wrong_shapes_and_bad_jsonl(tmp_path):
 
 # Module 4.2: the audit-trail job posts the audit summary as a PR comment.
 
-AUDIT_JOB_NEEDS = {"change-type-check", "policy-gate", "eval-gate", "governed-file-gate", "advisory-review"}
+AUDIT_JOB_NEEDS = {
+    "change-type-check", "pipeline-integrity", "policy-gate", "eval-gate", "governed-file-gate", "advisory-review",
+}
 COMMENT_MARKER_LINE = "<!-- marketradar-ci-audit-trail -->"
 RUN_LINK = {
     "GITHUB_SERVER_URL": "https://github.com",
@@ -1929,3 +1935,441 @@ def test_audit_comment_is_capped(tmp_path):
     assert "Comment truncated at 60,000 characters" in body
     assert "/actions/runs/123456" in body
     assert len(json.loads(trail_text)["mcp_actions"]["authorization_denials"]) == 2000
+
+
+# ---------------------------------------------------------------------------
+# Module 4.2 Exercise 1: Pipeline Integrity job (pipeline-integrity and
+# scripts/check-pipeline-integrity.py). The script runs as a subprocess with
+# --workflow and --output under tmp_path; nothing is written in the repository.
+# ---------------------------------------------------------------------------
+
+CHECK_PIPELINE_INTEGRITY = REPO_ROOT / "scripts" / "check-pipeline-integrity.py"
+INTEGRITY_SCRIPT_PATH = "scripts/check-pipeline-integrity.py"
+INTEGRITY_REPORT_PATH = "ci-artifacts/pipeline-integrity-report.json"
+
+
+def _integrity_job():
+    return _workflow()["jobs"]["pipeline-integrity"]
+
+
+def _integrity_run_step(job):
+    return next(step for step in job["steps"] if INTEGRITY_SCRIPT_PATH in str(step.get("run", "")))
+
+
+def test_pipeline_integrity_job_exists_and_is_a_gate():
+    job = _integrity_job()
+    assert job["name"] == "Pipeline Integrity Check"
+    assert "continue-on-error" not in job, "pipeline-integrity must not use job-level continue-on-error"
+    for step in job["steps"]:
+        assert "continue-on-error" not in step, f"pipeline-integrity step {step.get('name')!r} uses continue-on-error"
+
+
+def test_pipeline_integrity_job_is_unprivileged_and_independent():
+    job = _integrity_job()
+    assert "permissions" not in job
+    assert "needs" not in job
+    assert "env" not in job
+    assert "secrets." not in json.dumps(job)
+    for step in job["steps"]:
+        assert "env" not in step, step.get("name")
+
+
+def test_pipeline_integrity_checkout_does_not_persist_credentials():
+    checkout = next(
+        step for step in _integrity_job()["steps"] if str(step.get("uses", "")).startswith("actions/checkout")
+    )
+    assert checkout["with"]["persist-credentials"] is False
+
+
+def test_pipeline_integrity_job_runs_script_with_report_output():
+    command = _integrity_run_step(_integrity_job())["run"]
+    assert f"python {INTEGRITY_SCRIPT_PATH}" in command
+    assert f"--output {INTEGRITY_REPORT_PATH}" in command
+
+
+def test_pipeline_integrity_report_upload_always_and_ignore_missing():
+    upload = next(
+        step for step in _integrity_job()["steps"]
+        if str(step.get("uses", "")).startswith("actions/upload-artifact")
+    )
+    assert upload["if"] == "always()"
+    assert upload["with"]["path"] == INTEGRITY_REPORT_PATH
+    assert upload["with"]["if-no-files-found"] == "ignore"
+
+
+def test_audit_trail_records_pipeline_integrity_job():
+    job = _audit_job()
+    assert "pipeline-integrity" in job["needs"]
+    assert '--integrity-result "${{ needs.pipeline-integrity.result }}"' in _audit_build_step(job)["run"]
+
+
+def _run_integrity(tmp_path, workflow_path):
+    report_path = tmp_path / "out" / "pipeline-integrity-report.json"
+    result = subprocess.run(
+        [sys.executable, str(CHECK_PIPELINE_INTEGRITY), "--workflow", str(workflow_path), "--output", str(report_path)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.exists() else None
+    return result, report
+
+
+def _write_workflow(tmp_path, workflow):
+    path = tmp_path / "ci.yml"
+    path.write_text(yaml.safe_dump(workflow, sort_keys=False), encoding="utf-8")
+    return path
+
+
+def test_pipeline_integrity_script_passes_on_repository_workflow(tmp_path):
+    result, report = _run_integrity(tmp_path, WORKFLOW_PATH)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Pipeline integrity check passed" in result.stdout
+    assert report is not None
+    assert report["passed"] is True
+    assert report["errors"] == []
+    assert report["workflow"] == str(WORKFLOW_PATH)
+    assert report["checks"] and all(check["passed"] is True for check in report["checks"]), report["checks"]
+    assert {check["name"] for check in report["checks"]} == {
+        "gating_job_present:eval-gate",
+        "gating_job_present:pipeline-integrity",
+        "gating_job_present:policy-gate",
+        "gating_job_not_continue_on_error:eval-gate",
+        "gating_job_not_continue_on_error:pipeline-integrity",
+        "gating_job_not_continue_on_error:policy-gate",
+        "audit_trail_present",
+        "audit_trail_if_always",
+        "change_type_check_present",
+    }
+
+
+def _inject_integrity_fault(jobs, fault):
+    if fault == "policy-gate-continue-on-error":
+        jobs["policy-gate"]["continue-on-error"] = True
+    elif fault == "eval-gate-continue-on-error":
+        jobs["eval-gate"]["continue-on-error"] = True
+    elif fault == "audit-trail-if-removed":
+        del jobs["audit-trail"]["if"]
+    elif fault == "change-type-check-removed":
+        del jobs["change-type-check"]
+    elif fault == "pipeline-integrity-removed":
+        del jobs["pipeline-integrity"]
+    else:
+        raise AssertionError(f"unknown fault {fault}")
+
+
+INTEGRITY_FAULTS = {
+    "policy-gate-continue-on-error": (
+        "gating_job_not_continue_on_error:policy-gate",
+        "gating job 'policy-gate' has continue-on-error: true, which disables the gate",
+    ),
+    "eval-gate-continue-on-error": (
+        "gating_job_not_continue_on_error:eval-gate",
+        "gating job 'eval-gate' has continue-on-error: true, which disables the gate",
+    ),
+    "audit-trail-if-removed": ("audit_trail_if_always", "audit-trail job must keep 'if: always()'"),
+    "change-type-check-removed": ("change_type_check_present", "change-type-check classifier is missing"),
+    "pipeline-integrity-removed": (
+        "gating_job_present:pipeline-integrity",
+        "required gating job 'pipeline-integrity' is missing",
+    ),
+}
+
+
+@pytest.mark.parametrize("fault", sorted(INTEGRITY_FAULTS))
+def test_pipeline_integrity_script_detects_injected_fault(fault, tmp_path):
+    workflow = _workflow()
+    _inject_integrity_fault(workflow["jobs"], fault)
+    result, report = _run_integrity(tmp_path, _write_workflow(tmp_path, workflow))
+    check_name, expected_error = INTEGRITY_FAULTS[fault]
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "Pipeline integrity check FAILED:" in result.stdout
+    assert expected_error in result.stdout
+    assert "Traceback" not in result.stderr
+    assert report is not None
+    assert report["passed"] is False
+    assert report["errors"] == [expected_error]
+    failed = {check["name"] for check in report["checks"] if not check["passed"]}
+    assert check_name in failed
+
+
+# Fail-closed allowlists: job-level continue-on-error on a gating job must be
+# absent or boolean false, and the audit-trail `if` must be exactly always().
+# Mutated workflows are written with yaml.safe_dump, which quotes strings such
+# as "true", "false" and "yes" so they reload as strings, not booleans.
+
+CONTINUE_ON_ERROR_BYPASSES = [
+    "true",
+    "True",
+    "false",
+    "${{ true }}",
+    "${{ github.event_name == 'push' }}",
+    1,
+    0,
+    "yes",
+    None,
+    ["x"],
+    {"a": 1},
+]
+GATING_JOB_NAMES = ["policy-gate", "eval-gate", "pipeline-integrity"]
+AUDIT_IF_BYPASSES = [
+    "!always()",
+    "${{ !always() }}",
+    "always() && false",
+    "always() && github.event_name == 'push'",
+    "${{ always() && failure() }}",
+    "success()",
+    "always() || false",
+    "${{ always() }} && ${{ false }}",
+    True,
+    ["always()"],
+    {"always()": 1},
+]
+AUDIT_IF_ACCEPTED = ["always()", " always() ", "${{ always() }}", "${{always()}}"]
+AUDIT_IF_ERROR = "audit-trail job must keep 'if: always()'"
+
+
+def _run_integrity_on_mutated_workflow(tmp_path, mutate):
+    workflow = _workflow()
+    mutate(workflow["jobs"])
+    path = _write_workflow(tmp_path, workflow)
+    reloaded = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]
+    result, report = _run_integrity(tmp_path, path)
+    return result, report, reloaded
+
+
+@pytest.mark.parametrize("value", CONTINUE_ON_ERROR_BYPASSES, ids=repr)
+@pytest.mark.parametrize("job_name", GATING_JOB_NAMES)
+def test_pipeline_integrity_rejects_non_false_continue_on_error(job_name, value, tmp_path):
+    def mutate(jobs):
+        jobs[job_name]["continue-on-error"] = value
+
+    result, report, reloaded = _run_integrity_on_mutated_workflow(tmp_path, mutate)
+    # The written workflow must carry the value with its original type.
+    assert reloaded[job_name]["continue-on-error"] == value
+    assert type(reloaded[job_name]["continue-on-error"]) is type(value)
+    expected_error = (
+        f"gating job '{job_name}' has continue-on-error: {json.dumps(value)}; only false or absent is allowed"
+    )
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "Pipeline integrity check FAILED:" in result.stdout
+    assert "Traceback" not in result.stderr
+    assert report is not None
+    assert report["passed"] is False
+    assert report["errors"] == [expected_error]
+    assert any(job_name in error for error in report["errors"])
+    failed = {check["name"] for check in report["checks"] if not check["passed"]}
+    assert f"gating_job_not_continue_on_error:{job_name}" in failed
+
+
+# Boolean True has its own exact message; it is kept out of
+# CONTINUE_ON_ERROR_BYPASSES so the json.dumps-based expectation above holds.
+@pytest.mark.parametrize("job_name", GATING_JOB_NAMES)
+def test_pipeline_integrity_rejects_boolean_true_continue_on_error(job_name, tmp_path):
+    def mutate(jobs):
+        jobs[job_name]["continue-on-error"] = True
+
+    result, report, reloaded = _run_integrity_on_mutated_workflow(tmp_path, mutate)
+    assert reloaded[job_name]["continue-on-error"] is True
+    expected_error = f"gating job '{job_name}' has continue-on-error: true, which disables the gate"
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "Pipeline integrity check FAILED:" in result.stdout
+    assert expected_error in result.stdout
+    assert "Traceback" not in result.stderr
+    assert report is not None
+    assert report["passed"] is False
+    assert report["errors"] == [expected_error]
+    failed = {check["name"] for check in report["checks"] if not check["passed"]}
+    assert f"gating_job_not_continue_on_error:{job_name}" in failed
+
+
+def test_pipeline_integrity_accepts_continue_on_error_false(tmp_path):
+    def mutate(jobs):
+        jobs["policy-gate"]["continue-on-error"] = False
+
+    result, report, reloaded = _run_integrity_on_mutated_workflow(tmp_path, mutate)
+    assert reloaded["policy-gate"]["continue-on-error"] is False
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert report is not None
+    assert report["passed"] is True
+    assert report["errors"] == []
+
+
+@pytest.mark.parametrize("value", AUDIT_IF_BYPASSES, ids=repr)
+def test_pipeline_integrity_rejects_audit_trail_if_bypass(value, tmp_path):
+    def mutate(jobs):
+        jobs["audit-trail"]["if"] = value
+
+    result, report, reloaded = _run_integrity_on_mutated_workflow(tmp_path, mutate)
+    assert reloaded["audit-trail"]["if"] == value
+    assert type(reloaded["audit-trail"]["if"]) is type(value)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert AUDIT_IF_ERROR in result.stdout
+    assert "Traceback" not in result.stderr
+    assert report is not None
+    assert report["passed"] is False
+    assert report["errors"] == [AUDIT_IF_ERROR]
+    failed = {check["name"] for check in report["checks"] if not check["passed"]}
+    assert "audit_trail_if_always" in failed
+
+
+@pytest.mark.parametrize("value", AUDIT_IF_ACCEPTED, ids=repr)
+def test_pipeline_integrity_accepts_audit_trail_if_always_forms(value, tmp_path):
+    def mutate(jobs):
+        jobs["audit-trail"]["if"] = value
+
+    result, report, reloaded = _run_integrity_on_mutated_workflow(tmp_path, mutate)
+    assert reloaded["audit-trail"]["if"] == value
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert report is not None
+    assert report["passed"] is True
+    assert report["errors"] == []
+
+
+@pytest.mark.parametrize(
+    "case, content",
+    [
+        ("missing-file", None),
+        ("invalid-yaml", "jobs: [unclosed\n  policy-gate: {\n"),
+        ("top-level-not-mapping", "- just\n- a list\n"),
+        ("jobs-not-mapping", "name: CI\njobs:\n  - policy-gate\n"),
+    ],
+)
+def test_pipeline_integrity_script_fails_cleanly_on_unreadable_workflow(case, content, tmp_path):
+    workflow_path = tmp_path / "ci.yml"
+    if content is not None:
+        workflow_path.write_text(content, encoding="utf-8")
+    result, report = _run_integrity(tmp_path, workflow_path)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "Pipeline integrity check FAILED:" in result.stdout
+    assert "Traceback" not in result.stderr
+    assert report is not None
+    assert report["passed"] is False
+    assert report["errors"]
+    assert report["checks"] and all(check["passed"] is False for check in report["checks"])
+
+
+def _run_integrity_twice(tmp_path, workflow_path):
+    runs = []
+    for index in (1, 2):
+        report_path = tmp_path / f"out-{index}" / "pipeline-integrity-report.json"
+        result = subprocess.run(
+            [sys.executable, str(CHECK_PIPELINE_INTEGRITY), "--workflow", str(workflow_path), "--output", str(report_path)],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert "Traceback" not in result.stderr
+        assert report_path.exists(), result.stdout + result.stderr
+        runs.append((result, report_path.read_bytes()))
+    return runs
+
+
+def test_pipeline_integrity_output_is_deterministic_on_failure(tmp_path):
+    workflow = _workflow()
+    workflow["jobs"]["policy-gate"]["continue-on-error"] = "true"
+    path = _write_workflow(tmp_path, workflow)
+    (first, first_report), (second, second_report) = _run_integrity_twice(tmp_path, path)
+    assert first.returncode == second.returncode == 1, first.stdout + first.stderr
+    assert first.stdout == second.stdout
+    assert first_report == second_report
+
+
+def test_pipeline_integrity_output_is_deterministic_on_repository_workflow(tmp_path):
+    (first, first_report), (second, second_report) = _run_integrity_twice(tmp_path, WORKFLOW_PATH)
+    assert first.returncode == second.returncode == 0, first.stdout + first.stderr
+    assert first.stdout == second.stdout
+    assert first_report == second_report
+
+
+# The audit trail records the pipeline-integrity job result and report.
+
+INTEGRITY_ERROR = "gating job 'policy-gate' has continue-on-error: true, which disables the gate"
+
+
+def _write_integrity_report(tmp_path, report):
+    artifacts = tmp_path / "ci-artifacts"
+    artifacts.mkdir(exist_ok=True)
+    (artifacts / "pipeline-integrity-report.json").write_text(json.dumps(report), encoding="utf-8")
+
+
+@pytest.mark.parametrize("integrity", ["success", "failure"])
+def test_audit_trail_records_pipeline_integrity_result(integrity, tmp_path):
+    result, trail_text, summary = _run_audit_trail(tmp_path, {"--integrity-result": integrity})
+    assert result.returncode == 0, result.stderr
+    trail = json.loads(trail_text)
+    assert trail["checks"]["pipeline_integrity"] == {"status": integrity, "raw_result": integrity, "gating": True}
+    assert trail["results"]["pipeline_integrity"] == integrity
+    assert _summary_check_rows(summary)["pipeline_integrity"] == ("gating", integrity, integrity, None)
+
+
+def test_audit_trail_reflects_failed_pipeline_integrity_report(tmp_path):
+    _write_artifacts(tmp_path)
+    _write_integrity_report(tmp_path, {
+        "passed": False,
+        "workflow": ".github/workflows/ci.yml",
+        "checks": [{"name": "gating_job_not_continue_on_error:policy-gate", "passed": False, "detail": "x"}],
+        "errors": [INTEGRITY_ERROR, 7, {"not": "a string"}],
+    })
+    result, trail_text, summary = _run_audit_trail(tmp_path, {"--integrity-result": "failure"})
+    assert result.returncode == 0, result.stderr
+    trail = json.loads(trail_text)
+    assert trail["pipeline_integrity"] == {"report_present": True, "passed": False, "errors": [INTEGRITY_ERROR]}
+    assert trail["reports_present"]["pipeline_integrity_report"] is True
+    assert "**Pipeline integrity:** failed (1 problem)" in summary
+    assert INTEGRITY_ERROR in summary
+
+
+def test_audit_trail_pluralizes_multiple_pipeline_integrity_problems(tmp_path):
+    second_error = "required job 'audit-trail' is missing"
+    _write_integrity_report(tmp_path, {
+        "passed": False, "workflow": "ci.yml", "checks": [], "errors": [INTEGRITY_ERROR, second_error],
+    })
+    result, trail_text, summary = _run_audit_trail(tmp_path, {"--integrity-result": "failure"})
+    assert result.returncode == 0, result.stderr
+    assert "**Pipeline integrity:** failed (2 problems)" in summary
+    assert INTEGRITY_ERROR in summary
+    assert second_error in summary
+
+
+def test_audit_trail_reflects_passed_pipeline_integrity_report(tmp_path):
+    _write_integrity_report(tmp_path, {"passed": True, "workflow": "ci.yml", "checks": [], "errors": []})
+    result, trail_text, summary = _run_audit_trail(tmp_path)
+    assert result.returncode == 0, result.stderr
+    trail = json.loads(trail_text)
+    assert trail["pipeline_integrity"] == {"report_present": True, "passed": True, "errors": []}
+    assert trail["reports_present"]["pipeline_integrity_report"] is True
+    assert "**Pipeline integrity:** passed" in summary
+
+
+@pytest.mark.parametrize(
+    "report",
+    [None, {"passed": "yes", "errors": [INTEGRITY_ERROR]}, [1, 2]],
+    ids=["missing", "non-bool-passed", "list"],
+)
+def test_audit_trail_without_usable_pipeline_integrity_report(report, tmp_path):
+    if report is not None:
+        _write_integrity_report(tmp_path, report)
+    result, trail_text, summary = _run_audit_trail(tmp_path)
+    assert result.returncode == 0, result.stderr
+    trail = json.loads(trail_text)
+    assert trail["pipeline_integrity"] == {"report_present": False, "passed": None, "errors": []}
+    assert trail["reports_present"]["pipeline_integrity_report"] is False
+    assert "**Pipeline integrity:** no readable report" in summary
+    assert INTEGRITY_ERROR not in summary
+
+
+def test_audit_trail_gives_pipeline_integrity_no_skip_reason_after_classifier_failure(tmp_path):
+    overrides = {
+        "--classifier-result": "failure", "--integrity-result": "skipped", "--policy-result": "skipped",
+        "--governed-result": "skipped", "--eval-result": "skipped", "--deterministic-outcome": "",
+        "--rubric-outcome": "", "--review-result": "skipped", "--requires-governed-check": "",
+        "--agent-affecting": "",
+    }
+    result, trail_text, _ = _run_audit_trail(tmp_path, overrides)
+    assert result.returncode == 0, result.stderr
+    checks = json.loads(trail_text)["checks"]
+    assert checks["pipeline_integrity"] == {"status": "not_triggered", "raw_result": "skipped", "gating": True}
+    assert checks["policy_gate"]["reason"] == "skipped: change classification did not succeed"

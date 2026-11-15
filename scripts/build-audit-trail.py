@@ -17,6 +17,7 @@ The trail contains:
   only printed a skip notice). `failure` and `cancelled` are always reported.
   A check skipped because an upstream job did not succeed gets a `reason`;
 - pass/fail counts from the pytest JSON reports;
+- the pipeline integrity report's result and error strings;
 - rubric scores (without justification text) or the reason none were given;
 - a whitelisted summary of the advisory reviewer's review-audit.json (never
   the review text);
@@ -64,6 +65,7 @@ REASON_DETERMINISTIC = "skipped: deterministic evaluation did not succeed"
 
 GATING = {
     "change_classification": True,
+    "pipeline_integrity": True,
     "policy_gate": True,
     "governed_file_gate": True,
     "eval_gate": True,
@@ -72,6 +74,8 @@ GATING = {
     "advisory_review": False,
 }
 POLICY_DEPENDENTS = {"governed_file_gate", "eval_gate", "eval_deterministic", "eval_rubric", "advisory_review"}
+# Checks with no upstream job: they never get a skip reason.
+NO_UPSTREAM = {"change_classification", "pipeline_integrity"}
 
 COUNT_KEYS = ("passed", "failed", "error", "skipped", "total")
 
@@ -125,7 +129,7 @@ def add_skip_reasons(checks: dict) -> None:
         return (checks[name]["raw_result"] or "").strip()
 
     for name, check in checks.items():
-        if name == "change_classification" or raw(name) not in ("", "skipped"):
+        if name in NO_UPSTREAM or raw(name) not in ("", "skipped"):
             continue
         if raw("change_classification") in ALWAYS_REPORTED:
             check["reason"] = REASON_CLASSIFIER
@@ -176,6 +180,16 @@ def rubric_results(report, rubric_check_status: str) -> dict:
         "status": "not_scored",
         "reason": report.get("reason"),
         "deterministic_precheck_passed": _dict(report.get("deterministic")).get("passed"),
+    }
+
+
+def integrity_results(report) -> dict:
+    if not isinstance(report, dict) or not isinstance(report.get("passed"), bool):
+        return {"report_present": False, "passed": None, "errors": []}
+    return {
+        "report_present": True,
+        "passed": report["passed"],
+        "errors": [error for error in _list(report.get("errors")) if isinstance(error, str)],
     }
 
 
@@ -332,6 +346,16 @@ def build_summary(trail: dict) -> str:
             )
         else:
             lines.append(f"- **{label}:** no readable report (not triggered or not produced)")
+    integrity = trail["pipeline_integrity"]
+    if not integrity["report_present"]:
+        lines.append("- **Pipeline integrity:** no readable report (not triggered or not produced)")
+    elif integrity["passed"]:
+        lines.append("- **Pipeline integrity:** passed")
+    else:
+        count = len(integrity["errors"])
+        lines.append(f"- **Pipeline integrity:** failed ({count} problem{'' if count == 1 else 's'})")
+        for error in integrity["errors"]:
+            lines.append(f"  - {_cell(error)}")
     lines.append("")
 
     rubric = trail["rubric"]
@@ -400,6 +424,7 @@ def build_trail(args) -> dict:
     review_output = load_text(artifact_dir / "review-output.md", "")
     deterministic_report = load_json(artifact_dir / "deterministic-report.json", {})
     rubric_report = load_json(artifact_dir / "rubric-report.json", {})
+    integrity_report = load_json(artifact_dir / "pipeline-integrity-report.json", {})
 
     requires_governed = args.requires_governed_check == "true"
     agent_affecting = args.agent_affecting == "true"
@@ -407,6 +432,7 @@ def build_trail(args) -> dict:
 
     checks = {
         "change_classification": check_status(args.classifier_result),
+        "pipeline_integrity": check_status(args.integrity_result),
         "policy_gate": check_status(args.policy_result),
         "governed_file_gate": check_status(args.governed_result, requires_governed),
         "eval_gate": check_status(args.eval_result, agent_affecting),
@@ -417,6 +443,7 @@ def build_trail(args) -> dict:
     for name, check in checks.items():
         check["gating"] = GATING[name]
     add_skip_reasons(checks)
+    integrity = integrity_results(integrity_report)
 
     return {
         "metadata": {
@@ -433,6 +460,7 @@ def build_trail(args) -> dict:
         },
         "checks": checks,
         "results": {
+            "pipeline_integrity": args.integrity_result,
             "policy_gate": args.policy_result,
             "governed_file_gate": args.governed_result,
             "advisory_review": args.review_result,
@@ -447,7 +475,9 @@ def build_trail(args) -> dict:
             "review_output": bool(review_output),
             "deterministic_report": bool(deterministic_report),
             "rubric_report": bool(rubric_report),
+            "pipeline_integrity_report": integrity["report_present"],
         },
+        "pipeline_integrity": integrity,
         "policy_results": pytest_results(policy_report),
         "deterministic_results": pytest_results(deterministic_report),
         "governed_results": pytest_results(governed_report),
@@ -499,6 +529,7 @@ def main() -> int:
     parser.add_argument("--touches-policy", default="false")
     parser.add_argument("--requires-governed-check", default="false")
     parser.add_argument("--classifier-result", default="unknown")
+    parser.add_argument("--integrity-result", default="unknown")
     parser.add_argument("--policy-result", default="unknown")
     parser.add_argument("--governed-result", default="unknown")
     parser.add_argument("--review-result", default="unknown")

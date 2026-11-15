@@ -55,6 +55,33 @@ jobs:
             echo "agent-affecting=false" >> "$GITHUB_OUTPUT"
           fi
 
+  pipeline-integrity:
+    name: Pipeline Integrity Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PyYAML
+        run: pip install "PyYAML>=6.0"
+
+      - name: Check pipeline integrity
+        run: python scripts/check-pipeline-integrity.py --output ci-artifacts/pipeline-integrity-report.json
+
+      - name: Upload pipeline integrity report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-integrity-report
+          path: ci-artifacts/pipeline-integrity-report.json
+          retention-days: 90
+          if-no-files-found: ignore
+
   policy-gate:
     name: Policy Test Suite
     runs-on: ubuntu-latest
@@ -240,7 +267,7 @@ jobs:
   audit-trail:
     name: Audit Trail
     runs-on: ubuntu-latest
-    needs: [change-type-check, policy-gate, eval-gate, governed-file-gate, advisory-review]
+    needs: [change-type-check, pipeline-integrity, policy-gate, eval-gate, governed-file-gate, advisory-review]
     if: always()
     permissions:
       contents: read
@@ -270,6 +297,7 @@ jobs:
             --pr "${{ github.event.pull_request.number || 0 }}" \
             --changed-files "$CHANGED_FILES" \
             --classifier-result "${{ needs.change-type-check.result }}" \
+            --integrity-result "${{ needs.pipeline-integrity.result }}" \
             --touches-policy "${{ needs.change-type-check.outputs.touches-policy }}" \
             --requires-governed-check "${{ needs.change-type-check.outputs.requires-governed-check }}" \
             --policy-result "${{ needs.policy-gate.result }}" \
