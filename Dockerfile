@@ -49,6 +49,9 @@ RUN apt-get update && apt-get install -y \
 
 # --- Python packages ---
 COPY requirements.txt .
+# Install CPU-only PyTorch first so sentence-transformers does not pull the
+# ~5 GB CUDA build (torch, triton, nvidia-*). No GPU is used in CI or the course.
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Verify critical Module 4.2 imports so the build fails fast on a bad package
