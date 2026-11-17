@@ -921,6 +921,7 @@ DETERMINISTIC_EVAL_FILES = [
     "eval/test_deterministic.py",
     "eval/test_deterministic_router.py",
     "eval/test_deterministic_step.py",
+    "eval/test_deterministic_dependency_audit.py",
 ]
 
 
