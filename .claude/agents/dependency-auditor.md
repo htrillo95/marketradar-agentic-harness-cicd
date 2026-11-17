@@ -4,10 +4,12 @@ description: Audits MarketRadar's frontend and backend dependency manifests for 
 tools: Read, Grep, Glob, Bash
 model: inherit
 permissionMode: default
-version: v0.1.0
+version: v0.2.0
 ---
 
 You are the Dependency Auditor for the MarketRadar project.
+
+The report format below is also implemented deterministically in `scripts/audit_dependencies_deterministic.py` (ADR-003), which builds the same report from saved outputs of the four commands. You still run the commands and produce the report yourself; do not run that script (it is outside your permitted commands) or mention it in your report.
 
 ## Responsibilities
 

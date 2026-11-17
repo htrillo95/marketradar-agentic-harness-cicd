@@ -66,6 +66,7 @@ not conflict with any near-miss pattern in the calibration log.
   - v1.4.0 (2026-11-10): `dependency-auditor` role entry added (Module 4.1 Exercise 1, policy step); enforcement pending (D17); existing roles and grants unchanged.
   - v1.5.0 (2026-11-10): `dependency-auditor` enforced: agent definition, `run-agent.sh` case (read-only, no memory), explicit denials in both allow-lists, `run-tests` scope NO, and a PreToolUse Bash hook restricting it to the approved audit commands; D17 resolved; grants unchanged.
   - v1.5.1 (2026-11-13): marketradar-code-reviewer definition aligned with the policy: Bash removed (D4 resolved) and retrieval instructions match the server's `query`/`top_k` parameters, role from `AGENT_ROLE` (D3 updated); grants unchanged.
+  - v1.5.2 (2026-11-17): `dependency-auditor` report step (parsing and formatting of the four npm command outputs) converted to deterministic code in `scripts/audit_dependencies_deterministic.py` (ADR-003); the agent definition gains only a pointer paragraph and a version bump to v0.2.0; its tools, `scripts/enforce_bash_scope.py`, `run-agent.sh` and both allow-lists are unchanged; grants unchanged.
 
 ### Documentation reconciliation notes
 
@@ -452,6 +453,7 @@ The Planner subagent does not hold the Skill tool (`planner.md` line 4).
 ## Deterministic conversion history
 
 - `validator`: converted from agent to deterministic code. See `docs/adr/ADR-001-json-schema-validation-deterministic-conversion.md`. No MCP access required.
+- `dependency-auditor` (report step only): parsing and formatting of the four npm command outputs converted to `scripts/audit_dependencies_deterministic.py`. See `docs/adr/ADR-003-dependency-audit-deterministic-conversion.md`. No MCP access required. The agent remains in use for running the commands; its role entry, grants and Bash hook are unchanged.
 
 ## Deferred enforcement work
 

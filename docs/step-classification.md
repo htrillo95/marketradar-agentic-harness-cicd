@@ -26,3 +26,13 @@ This document is updated after every calibration cycle. Steps that cross the sta
 
 - Recommendation: converted to deterministic sample (ADR-002). It uses explicit path rules with a default for unmatched paths.
 - Preserved edge case: unmatched paths route to `implementer` instead of failing silently.
+
+## Step: Dependency audit report
+
+- Status: Converted to deterministic (ADR-003, 2026-11-17). Only the report step was converted; the `dependency-auditor` agent still runs the four npm commands.
+- Stability: no harness calibration scores exist for this step; determinism is shown by tests (byte-identical output across runs).
+- Repeatability: the same inputs produce identical JSON and Markdown.
+- Specifiability: the `## Output` section of `.claude/agents/dependency-auditor.md`.
+- Run rate: on demand.
+- Preserved edge cases: npm error objects, empty or invalid JSON and the npm v6 format are reported as errors, never as zero counts; `npm outdated` `{}` means none outdated; npm's own exit codes are ignored. Covered by `eval/test_deterministic_dependency_audit.py`.
+- Recommendation: converted.
