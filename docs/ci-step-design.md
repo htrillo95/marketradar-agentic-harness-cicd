@@ -20,7 +20,7 @@ This document classifies three CI steps as gating or advisory. It describes what
 
 Gaps found while inspecting the repository:
 
-- **The Pipeline Integrity job checks the pull request's own `ci.yml`.** `pipeline-integrity` (Pipeline Integrity Check) reads the workflow file and `scripts/check-pipeline-integrity.py` from the commit under test. Requiring the "Pipeline Integrity Check" status check in branch protection blocks a pull request that deletes the job or renames its check, because the required status never reports. It does not block a pull request that weakens the job's steps or `scripts/check-pipeline-integrity.py` itself, because the weakened job still reports success; such changes rely on human review. `README.md` lists the check as required, but the repository's branch protection settings have not been verified here.
+- **The Pipeline Integrity job checks the pull request's own `ci.yml`.** `pipeline-integrity` (Pipeline Integrity Check) reads the workflow file and `scripts/check-pipeline-integrity.py` from the commit under test. Requiring the "Pipeline Integrity Check" status check in branch protection blocks a pull request that deletes the job or renames its check, because the required status never reports. It does not block a pull request that weakens the job's steps or `scripts/check-pipeline-integrity.py` itself, because the weakened job still reports success; such changes rely on human review. Branch protection on `main` requires "Pipeline Integrity Check" alongside "Policy Test Suite" and "Evaluation Harness" (reported by the repository owner from GitHub settings; see "Pipeline Integrity Check: recorded evidence" below).
 - **No job sets `timeout-minutes`**, so GitHub's default job timeout applies.
 - **The workflow has no workflow-level `permissions:` block.** Every job receives a `GITHUB_TOKEN`; jobs without a `permissions:` block get the repository's default token permissions. Only `advisory-review` and `audit-trail` declare job-level permissions, each `contents: read` and `pull-requests: write`; no other job and no workflow-level block does. Whether the other jobs' tokens can write depends on the repository's default token setting, which has not been verified here.
 
@@ -75,12 +75,41 @@ Classification rule used below: a step is **gating** only if it is deterministic
   - GitHub does not pass secrets to workflows triggered from forks, and fork PRs get a read-only `GITHUB_TOKEN`. On fork PRs the script writes the "no review performed" note instead of a review, and the comment step fails without failing anything.
   - Recommended, not yet applied: use a key dedicated to CI review with a spend limit.
 
+## Pipeline Integrity Check: recorded evidence (Module 4.2 Exercise 1)
+
+Observed in GitHub by the repository owner (not inspected from the development environment):
+
+- GitHub Actions workflow run #10 for commit `3f881bb` ("ci: add pipeline integrity gate") completed successfully.
+- The Pipeline Integrity Check (`pipeline-integrity`) job passed.
+- Branch protection on `main` requires Pipeline Integrity Check, Policy Test Suite and Evaluation Harness as status checks.
+- The audit-trail job summary for that run lists `pipeline_integrity` with kind `gating`, status `success` and raw result `success`.
+
+Verified locally in the development environment:
+
+- `scripts/check-pipeline-integrity.py` exits 1 with a named error in its JSON report when a gate is weakened. The regression tests in `eval/test_policy.py` (tests named `test_pipeline_integrity_*`) cover:
+  - removing the `change-type-check` or `pipeline-integrity` job;
+  - job-level `continue-on-error` on `policy-gate`, `eval-gate` or `pipeline-integrity` set to anything other than absent or boolean `false`, including `true`, quoted strings such as `"true"` and `"false"`, `${{ }}` expressions, `0`, `1`, null, lists and maps;
+  - an `audit-trail` `if` that is not exactly `always()`, including negated (`!always()`) and compound (`always() && ...`, `always() || false`) conditions, a missing `if`, and non-string values;
+  - missing or malformed workflow files (invalid YAML, or a top level or `jobs` value that is not a mapping), which fail without a traceback.
+- Two runs on the same input produce byte-identical reports.
+- Full local test suite: `python -m pytest eval/ -q` reported 348 passed.
+
+These results do not change the limitation above: a pull request that weakens the job's steps or `scripts/check-pipeline-integrity.py` itself still reports success and relies on human review.
+
+### Evaluation Harness in run #10
+
+Observed in GitHub by the repository owner (not inspected from the development environment), for the same run #10 on commit `3f881bb`:
+
+- The Evaluation Harness (`eval-gate`) job passed, taking approximately 4 minutes 2 seconds (the job includes building the course image).
+- The audit trail recorded `eval_gate` and `eval_deterministic` (both gating) as successful.
+- The rubric evaluation step remains advisory (`continue-on-error: true`) and did not pass. It did not block the job: the gating result comes from the deterministic step only.
+
 ## Not verified here
 
 - No GitHub Actions run was inspected from this environment, so it is not confirmed that the advisory review has produced a real review in CI.
 - Course-image build time on GitHub runners is unmeasured.
 - Job timeouts are design decisions in this document, not yet implemented in `ci.yml`. The only `permissions:` blocks implemented are the job-level ones on `advisory-review` and `audit-trail`.
-- The `eval-gate` job and the OpenRouter judge have not run on GitHub Actions; the OpenRouter model slug is unverified.
+- The OpenRouter rubric judge has not produced a passing result on GitHub Actions: in run #10 the advisory rubric step did not pass (see "Evaluation Harness in run #10" above), so no CI rubric score has been confirmed. The OpenRouter model slug is unverified.
 - The reviewer subagent run is unverified: the Claude CLI could not be executed in the development container, so the `claude -p --agent marketradar-code-reviewer` invocation, the `--agent` CLI behaviour and the subagent's JSON output have only been exercised through a fake `subprocess.run` in `eval/test_policy.py`.
 - MCP retrieval in CI is unverified: it is not confirmed that the retrieval server starts under `--strict-mcp-config` or that the subagent calls it.
 - PR comment posting via `gh pr comment` is unverified.
