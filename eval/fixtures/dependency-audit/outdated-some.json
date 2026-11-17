@@ -1,0 +1,15 @@
+{
+  "vite": {
+    "wanted": "8.0.1",
+    "latest": "8.1.0",
+    "dependent": "tracker-client",
+    "location": ""
+  },
+  "react": {
+    "latest": "19.1.0",
+    "current": "19.0.0",
+    "wanted": "19.1.0",
+    "dependent": "tracker-client",
+    "location": "node_modules/react"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "ENOTFOUND",
+    "summary": "request to https://registry.npmjs.org/react failed"
+  }
+}

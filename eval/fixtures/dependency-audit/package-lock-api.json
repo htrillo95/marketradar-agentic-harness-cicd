@@ -1,0 +1,19 @@
+{
+  "name": "tracker-api",
+  "lockfileVersion": 3,
+  "requires": true,
+  "packages": {
+    "": {
+      "name": "tracker-api",
+      "dependencies": {
+        "lodash": "^4.17.20"
+      }
+    },
+    "node_modules/lodash": {
+      "version": "4.17.20"
+    },
+    "node_modules/qs": {
+      "version": "6.9.0"
+    }
+  }
+}

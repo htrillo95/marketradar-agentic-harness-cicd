@@ -1,0 +1,23 @@
+{
+  "actions": [],
+  "advisories": {
+    "1085674": {
+      "module_name": "lodash",
+      "severity": "high",
+      "title": "Prototype Pollution in lodash",
+      "url": "https://github.com/advisories/GHSA-p6mc-m468-83gw",
+      "patched_versions": ">=4.17.21"
+    }
+  },
+  "muted": [],
+  "metadata": {
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 1,
+      "critical": 0
+    },
+    "dependencies": 330
+  }
+}
