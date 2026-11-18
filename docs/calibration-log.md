@@ -74,3 +74,19 @@ Reported by the repository owner (run outside the development environment; not r
 This verifies the deterministic report workflow against real npm output rather than only the hand-written fixtures. It does not establish a measured speed or cost improvement over the original agent, whose runtime and token usage were not measured.
 
 No before-and-after improvement can be stated for this conversion: the agent's runtime, token usage and output were not measured, so there is no baseline to compare against.
+
+## Module 4.3 — End-to-End Regression Status
+
+- Implementation: the deterministic dependency-audit report step is complete: `scripts/audit_dependencies_deterministic.py` and the human-run wrapper `scripts/run-dependency-audit.sh` (ADR-003).
+- Passed, per existing recorded evidence:
+  - Unit tests: `eval/test_deterministic_dependency_audit.py`, recorded in ADR-003 as 43 tests; the four deterministic test files are recorded there as 58 passed. The "After conversion" entry above records the earlier counts (36 and 51) from before the wrapper tests were added.
+  - Policy tests and CI: GitHub Actions run #12 for commit `5cbf331` completed successfully (see "Integrated CI check" above, reported by the repository owner). In `.github/workflows/ci.yml`, the Policy Test Suite (`policy-gate`) is a gating job in that workflow.
+  - Real npm verification: the human-run wrapper on 2026-11-17 (see "Real npm verification (human-run wrapper)" above).
+- Not completed: the full orchestration regression (at least two holdout tasks and two development tasks run through the complete orchestration after the conversion). No such run has been recorded.
+- Blockers in the existing Module 3 orchestration:
+  - No reliable end-to-end entry point: orchestration is an interactive Orchestrator session, and roles are otherwise launched one at a time (`claude --agent <role> … -p`, or `scripts/run-agent.sh <role>`).
+  - Limited harness coverage: `eval/module3/test_deterministic.py` accepts only the Tester-only lint route (`DEV-LINT-001`), and `eval/module3/module-3.3-evaluation-harness/` has an evaluator only for HO-01. HO-01 and HO-02 were already exercised in Module 3 (`eval/module3/README.md`).
+  - Unresolved MCP integration: the agent definitions use Module 3 MCP argument shapes that do not match the Module 4 servers (policy gap D2 in `docs/governance-policy.md`).
+  - No orchestrated task routes to `dependency-auditor`, so the regression tasks would not exercise the converted step itself.
+- Baseline: no measurements of the original `dependency-auditor` agent exist (runtime, token usage, or output comparison); see "Before conversion — dependency-auditor agent" above.
+- ADR-003 remains Proposed pending regression evidence (`docs/adr/ADR-003-dependency-audit-deterministic-conversion.md`).
