@@ -2,6 +2,8 @@
 
 This document is updated after every calibration cycle. Steps that cross the stability threshold are promoted to candidate status. A step that has been a candidate for more than two calibration cycles without meeting all four signals is reviewed for re-scoping.
 
+Review schedule: weak candidates are reviewed monthly; steps that are not currently candidates are reviewed every 3 months; converted steps are re-evaluated when their stated review trigger occurs. Classifications are also reviewed after every calibration cycle.
+
 ## Step: JSON schema validation
 
 - Status: Converted to deterministic (ADR-001, 2026-06-06).
@@ -36,6 +38,7 @@ This document is updated after every calibration cycle. Steps that cross the sta
 - Run rate: on demand.
 - Preserved edge cases: npm error objects, empty or invalid JSON and the npm v6 format are reported as errors, never as zero counts; `npm outdated` `{}` means none outdated; npm's own exit codes are ignored. Covered by `eval/test_deterministic_dependency_audit.py`.
 - Run path: `bash scripts/run-dependency-audit.sh` (human-run) produces the inputs and runs the script; npm failures are reported as errors.
+- Review trigger: re-evaluate the deterministic implementation if `npm audit --json` or `npm outdated --json` changes its output format.
 - Recommendation: converted.
 
 ## Step: Advisory code review
