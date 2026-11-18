@@ -15,12 +15,12 @@ This document is updated after every calibration cycle. Steps that cross the sta
 ## Step: Planner
 
 - Recommendation: not a candidate. Needs judgment and synthesis to break a task into subtasks; output is not specifiable in advance.
-- Next review: 2026-09-04.
+- Next review: 2027-02-18.
 
 ## Step: Release note draft
 
 - Recommendation: weak candidate. Output is prose that needs human review and is not yet repeatable across runs.
-- Candidate since: 2026-06-04. Next review: 2026-07-04.
+- Candidate since: 2026-06-04. Next review: 2026-12-18.
 
 ## Step: Path-based routing
 
@@ -35,4 +35,35 @@ This document is updated after every calibration cycle. Steps that cross the sta
 - Specifiability: the `## Output` section of `.claude/agents/dependency-auditor.md`.
 - Run rate: on demand.
 - Preserved edge cases: npm error objects, empty or invalid JSON and the npm v6 format are reported as errors, never as zero counts; `npm outdated` `{}` means none outdated; npm's own exit codes are ignored. Covered by `eval/test_deterministic_dependency_audit.py`.
+- Run path: `bash scripts/run-dependency-audit.sh` (human-run) produces the inputs and runs the script; npm failures are reported as errors.
 - Recommendation: converted.
+
+## Step: Advisory code review
+
+- Recommendation: not a candidate. `marketradar-code-reviewer` in the `advisory-review` CI job makes open-ended judgments on code changes; it stays advisory.
+- Next review: 2027-02-18.
+
+## Step: Rubric judge
+
+- Recommendation: not a candidate. The advisory rubric step in `eval-gate` is model-judged quality scoring by design; it stays advisory behind the deterministic pre-check.
+- Next review: 2027-02-18.
+
+## Step: Implementer
+
+- Recommendation: not a candidate. Writes code from an approved plan.
+- Next review: 2027-02-18.
+
+## Step: Tester
+
+- Recommendation: not a candidate as a whole. Test execution is already deterministic, but judging results against acceptance criteria needs reasoning.
+- Next review: 2027-02-18.
+
+## Step: Project manager
+
+- Recommendation: weak candidate. The outcome rule (never complete if review or testing failed) is rule-based, but the step depends on storage MCP calls that do not match the Module 4 server (policy gap D2).
+- Next review: 2026-12-18.
+
+## Step: Dependency audit command execution
+
+- Recommendation: retained. The `dependency-auditor` agent runs four fixed commands, and `scripts/run-dependency-audit.sh` runs them for the report path; the agent remains the governed fallback because the policy and its tests require the role.
+- Next review: 2027-02-18.

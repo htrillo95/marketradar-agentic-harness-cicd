@@ -2,7 +2,9 @@
 
 import copy
 import json
+import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -423,3 +425,171 @@ def test_script_has_no_subprocess_or_network_usage():
     assert "socket" not in source
     assert "urllib" not in source
     assert not re.search(r"^\s*(import|from)\s+(http|requests|httpx)\b", source, re.MULTILINE)
+
+
+# --- wrapper: scripts/run-dependency-audit.sh with a fake npm (never real npm) ---
+
+
+WRAPPER = "scripts/run-dependency-audit.sh"
+BASH = shutil.which("bash")
+needs_bash = pytest.mark.skipif(BASH is None, reason="bash is not available")
+REPORT_JSON = "dependency-audit-report.json"
+REPORT_MD = "dependency-audit-report.md"
+CANONICAL_NPM_ARGS = [
+    "audit --json --prefix tracker-api",
+    "audit --json --prefix tracker-client",
+    "outdated --json --prefix tracker-api",
+    "outdated --json --prefix tracker-client",
+]
+# Base PATH for the wrapper. The directory of sys.executable is not added because it
+# may hold a real npm (e.g. /usr/local/bin); a python3 shim in the fake bin is used instead.
+BASE_PATH = ["/usr/bin", "/bin"]
+# External commands the wrapper calls when npm is missing (cd, pwd, command, echo, : and
+# [ are bash builtins). Symlinked into an isolated bin so no real npm can be found.
+WRAPPER_UTILS = ["bash", "mkdir", "mktemp", "dirname"]
+
+FAKE_NPM = """#!@BASH@
+printf '%s\\n' "$*" >> "$FAKE_NPM_LOG"
+case "$FAKE_NPM_MODE:$1" in
+  ok:audit) cat "$FAKE_NPM_FIXTURES/audit-v7-vulns.json" ;;
+  ok:outdated) cat "$FAKE_NPM_FIXTURES/outdated-some.json" ;;
+  error:*) cat "$FAKE_NPM_FIXTURES/audit-error.json" ;;
+esac
+exit "${FAKE_NPM_EXIT:-1}"
+"""
+
+
+def link_wrapper_utils(bin_dir):
+    """Symlink WRAPPER_UTILS into bin_dir; skip the test if any of them is missing."""
+    bin_dir.mkdir(exist_ok=True)
+    for name in WRAPPER_UTILS:
+        target = shutil.which(name)
+        if target is None:
+            pytest.skip(f"{name} is not available")
+        (bin_dir / name).symlink_to(target)
+
+
+def run_wrapper(tmp_path, mode=None, exit_code=1, base_path=BASE_PATH):
+    """Run the wrapper with a fake npm in `mode` ("ok", "error", "silent"), or no npm if None.
+
+    `base_path` is appended to PATH after the fake bin; pass [] to use only the fake bin.
+    """
+    bin_dir = tmp_path / "fake-bin"
+    bin_dir.mkdir(exist_ok=True)
+    shim = bin_dir / "python3"
+    shim.write_text(f'#!{BASH}\nexec "{sys.executable}" "$@"\n', encoding="utf-8")
+    shim.chmod(0o755)
+    if mode is not None:
+        npm = bin_dir / "npm"
+        npm.write_text(FAKE_NPM.replace("@BASH@", BASH), encoding="utf-8")
+        npm.chmod(0o755)
+    log = tmp_path / "npm-calls.log"
+    out_dir = tmp_path / "out"
+    env = dict(os.environ)
+    env.update(
+        PATH=os.pathsep.join([str(bin_dir)] + list(base_path)),
+        FAKE_NPM_MODE=mode or "",
+        FAKE_NPM_LOG=str(log),
+        FAKE_NPM_FIXTURES=str(FIXTURES),
+        FAKE_NPM_EXIT=str(exit_code),
+    )
+    proc = subprocess.run(
+        [BASH, WRAPPER, str(out_dir)], cwd=REPO, env=env, capture_output=True, text=True
+    )
+    return proc, out_dir, log
+
+
+def wrapper_result(out_dir):
+    return json.loads((out_dir / REPORT_JSON).read_text(encoding="utf-8"))
+
+
+def _assert_all_inputs_error(result, fragment):
+    assert result["status"] == "error"
+    assert [m["name"] for m in result["manifests"]] == ["tracker-api", "tracker-client"]
+    for manifest in result["manifests"]:
+        assert manifest["audit"]["status"] == "error"
+        assert manifest["audit"]["counts"] is None
+        assert fragment in manifest["audit"]["error"]
+        assert manifest["outdated"]["status"] == "error"
+        assert manifest["outdated"]["count"] is None
+        assert fragment in manifest["outdated"]["error"]
+
+
+@needs_bash
+def test_wrapper_success_with_findings_exits_zero(tmp_path):
+    proc, out_dir, _ = run_wrapper(tmp_path, "ok", exit_code=1)
+    assert proc.returncode == 0, proc.stderr
+    result = wrapper_result(out_dir)
+    assert result["status"] == "ok"
+    assert len(result["vulnerabilities"]) == 6
+    assert len(result["outdated"]) == 4
+    assert (out_dir / REPORT_MD).exists()
+    assert str(out_dir / REPORT_JSON) in proc.stdout
+    assert str(out_dir / REPORT_MD) in proc.stdout
+
+
+@needs_bash
+def test_wrapper_calls_only_the_four_canonical_commands(tmp_path):
+    proc, _, log = run_wrapper(tmp_path, "ok")
+    assert proc.returncode == 0, proc.stderr
+    assert log.read_text(encoding="utf-8").splitlines() == CANONICAL_NPM_ARGS
+
+
+@needs_bash
+def test_wrapper_npm_failure_without_output_is_error(tmp_path):
+    proc, out_dir, _ = run_wrapper(tmp_path, "silent", exit_code=1)
+    assert proc.returncode == 1
+    assert "Traceback" not in proc.stderr
+    assert "Traceback" not in proc.stdout
+    _assert_all_inputs_error(wrapper_result(out_dir), "empty file")
+    summary = summary_section((out_dir / REPORT_MD).read_text(encoding="utf-8"))
+    assert "vulnerable packages: 0" not in summary
+    assert "outdated packages: 0" not in summary
+
+
+@needs_bash
+def test_wrapper_npm_error_object_is_error(tmp_path):
+    proc, out_dir, _ = run_wrapper(tmp_path, "error", exit_code=1)
+    assert proc.returncode == 1
+    assert "Traceback" not in proc.stderr
+    _assert_all_inputs_error(wrapper_result(out_dir), "ENOLOCK")
+
+
+@needs_bash
+def test_wrapper_npm_missing_reports_all_inputs_as_errors(tmp_path):
+    # PATH is only the fake bin (utilities + python3 shim, no npm), so a real npm in
+    # /usr/bin or /bin cannot be found.
+    link_wrapper_utils(tmp_path / "fake-bin")
+    proc, out_dir, log = run_wrapper(tmp_path, None, base_path=[])
+    assert proc.returncode == 1
+    assert "npm not found" in proc.stderr
+    assert "Traceback" not in proc.stderr
+    assert not log.exists()
+    _assert_all_inputs_error(wrapper_result(out_dir), "empty file")
+
+
+@needs_bash
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is not available")
+def test_wrapper_writes_only_inside_out_dir(tmp_path):
+    def git_status():
+        proc = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=REPO, capture_output=True, text=True,
+        )
+        if proc.returncode != 0:
+            pytest.skip(f"git status failed: {proc.stderr.strip()}")
+        return proc.stdout
+
+    before = git_status()
+    proc, out_dir, _ = run_wrapper(tmp_path, "ok")
+    assert proc.returncode == 0, proc.stderr
+    assert git_status() == before
+    expected = [f"{name}.{ext}" for name in ("audit-api", "audit-client", "outdated-api",
+                                             "outdated-client") for ext in ("json", "stderr")]
+    assert sorted(p.name for p in out_dir.iterdir()) == sorted(expected + [REPORT_JSON, REPORT_MD])
+
+
+def test_wrapper_runs_no_mutating_npm_commands():
+    source = (REPO / WRAPPER).read_text(encoding="utf-8")
+    for forbidden in ("npm install", "npm ci", "audit fix", "npm update"):
+        assert forbidden not in source

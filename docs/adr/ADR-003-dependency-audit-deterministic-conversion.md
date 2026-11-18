@@ -14,18 +14,20 @@ Move the parsing and formatting to `scripts/audit_dependencies_deterministic.py`
 
 The agent stays, unchanged in tools, permissions and Bash hook, as the governed way to run the four commands live. Its "## Output" section is the specification the script must match; a test parses those headings and checks that the Markdown report contains each of them.
 
+`scripts/run-dependency-audit.sh` is the human-run report path, invoked as `bash scripts/run-dependency-audit.sh [OUT_DIR]` (OUT_DIR defaults to a new temporary directory). It runs the four allowlisted commands, saves their output to OUT_DIR (by default a new temporary directory outside the repository), and passes it to the script. npm failures (missing npm, no output, npm error objects) reach the script as unreadable or error inputs and are reported as errors. The agent's tools, permissions and Bash hook are unchanged, because the wrapper runs outside the agent.
+
 ## Alternatives considered
 
 - Keep the agent doing everything. Rejected. The report step is structural reformatting of machine-readable JSON.
 - Let the agent run the script. Rejected. It would widen the agent's Bash grant beyond the four commands.
-- Have the script run npm itself. Rejected. Results would depend on the network and the registry and could not be reproduced offline.
+- Have the script run npm itself. Rejected. Results would depend on the network and the registry and could not be reproduced offline. The reporting script stays pure; npm runs only in the separate wrapper `scripts/run-dependency-audit.sh`.
 - Retire the agent. Rejected. The governance policy and its tests require the `dependency-auditor` role.
 
 ## Consequences
 
 - The report is deterministic and can be tested offline.
 - Unreadable or error inputs are reported as errors and never shown as zero counts; the script exits 1 on any such input and 0 otherwise.
-- A human or a job must produce the input files, because the agent cannot redirect command output to a file.
+- Inputs are produced by `scripts/run-dependency-audit.sh`, run by a human; the agent cannot redirect command output to a file, and the Orchestrator's Bash is not granted by the policy (D14).
 - Prioritising or explaining findings is no longer done by a model; recommendations are one templated line per finding and still require human approval.
 - The fixtures are hand-written. Real npm 10/11 output should be checked against the script before relying on it.
 - The installed version of a vulnerable package needs a lockfile; without one it is reported as "unknown" with the vulnerable range.
@@ -36,6 +38,6 @@ Follows ADR-001 and ADR-002. Unlike those, only one step of the role is converte
 
 ## Evidence
 
-- Tests: `eval/test_deterministic_dependency_audit.py` (36 tests) with fixtures in `eval/fixtures/dependency-audit/`. Coverage includes npm error objects, empty, invalid and missing input files, `npm outdated` returning `{}` (none outdated), rejection of the npm v6 audit format, exit code 1 on bad input, byte-identical output across two runs, identical output for reordered input, the agent's "## Output" headings, and a guard that the script imports no subprocess or network modules.
-- CI: since commit 4e7aa36, these tests run in the gating `eval-gate` deterministic step of `.github/workflows/ci.yml`. The local run of the four deterministic test files gave 51 passed.
+- Tests: `eval/test_deterministic_dependency_audit.py` (43 tests) with fixtures in `eval/fixtures/dependency-audit/`. Coverage includes npm error objects, empty, invalid and missing input files, `npm outdated` returning `{}` (none outdated), rejection of the npm v6 audit format, exit code 1 on bad input, byte-identical output across two runs, identical output for reordered input, the agent's "## Output" headings, a guard that the script imports no subprocess or network modules, and wrapper tests for `scripts/run-dependency-audit.sh` using a fake npm (success, npm failure without output, npm error object, npm missing, the exact four commands, writes only inside the output directory, and no mutating npm commands).
+- CI: since commit 4e7aa36, these tests run in the gating `eval-gate` deterministic step of `.github/workflows/ci.yml`. The local run of the four deterministic test files gave 58 passed.
 - No cost or latency measurements were taken for this conversion.
