@@ -34,3 +34,29 @@
 - Result: 24/24 harness checks passing; no regressions.
 - Policy suite: passing.
 - Evidence: deterministic validator is wired into orchestration and governance artifacts are in sync.
+
+## Dependency-auditor report step (ADR-003)
+
+Only the report step was converted: `scripts/audit_dependencies_deterministic.py` parses and formats saved outputs of the four allowlisted npm commands. The `dependency-auditor` agent still exists and still runs those commands.
+
+### Before conversion — dependency-auditor agent
+
+- Cycle time: not measured.
+- Token usage and cost: not measured.
+- Harness checks: none recorded; the step had no calibration runs before conversion.
+- Direct output comparison (agent report vs script report for the same npm inputs): not performed.
+
+### After conversion — deterministic report script in isolation
+
+- Dependency-audit tests: `eval/test_deterministic_dependency_audit.py`, 36 passing.
+- Deterministic test files together (`eval/test_deterministic.py`, `eval/test_deterministic_router.py`, `eval/test_deterministic_step.py`, `eval/test_deterministic_dependency_audit.py`): 51 passing.
+- Output variance: zero; repeated runs on the same inputs produced byte-identical JSON and Markdown reports (covered by `test_cli_two_runs_are_byte_identical` and `test_shuffled_input_gives_identical_output`).
+- AI token cost: $0. The script makes no model, network or subprocess calls.
+- Cycle time: not measured.
+- Inputs: hand-written fixtures in `eval/fixtures/dependency-audit/`; not yet checked against real npm 10/11 output.
+
+### Integrated CI check
+
+- GitHub Actions run #12 for commit `5cbf331` completed successfully in 10m 54s (reported by the repository owner from GitHub; not inspected from the development environment). The run includes the dependency-audit tests in the gating `eval-gate` deterministic step.
+
+No before-and-after improvement can be stated for this conversion: the agent's runtime, token usage and output were not measured, so there is no baseline to compare against.
