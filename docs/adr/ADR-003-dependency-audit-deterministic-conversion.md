@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+Proposed
+
+Acceptance is pending the integrated end-to-end regression check required by Module 4.3: at least two holdout tasks and two development tasks run through the complete orchestration after this conversion, with evaluation and policy results recorded in `docs/calibration-log.md`. No such check has been recorded yet; a successful GitHub Actions run does not substitute for it.
 
 ## Context
 
@@ -40,4 +42,7 @@ Follows ADR-001 and ADR-002. Unlike those, only one step of the role is converte
 
 - Tests: `eval/test_deterministic_dependency_audit.py` (43 tests) with fixtures in `eval/fixtures/dependency-audit/`. Coverage includes npm error objects, empty, invalid and missing input files, `npm outdated` returning `{}` (none outdated), rejection of the npm v6 audit format, exit code 1 on bad input, byte-identical output across two runs, identical output for reordered input, the agent's "## Output" headings, a guard that the script imports no subprocess or network modules, and wrapper tests for `scripts/run-dependency-audit.sh` using a fake npm (success, npm failure without output, npm error object, npm missing, the exact four commands, writes only inside the output directory, and no mutating npm commands).
 - CI: since commit 4e7aa36, these tests run in the gating `eval-gate` deterministic step of `.github/workflows/ci.yml`. The local run of the four deterministic test files gave 58 passed.
+- Real npm verification: on 2026-11-17 the repository owner ran `bash scripts/run-dependency-audit.sh` against real npm output; all four commands produced parseable results, both lockfiles loaded, and the JSON and Markdown reports were generated without an AI model. Recorded in `docs/calibration-log.md` ("Real npm verification (human-run wrapper)").
 - No cost or latency measurements were taken for this conversion.
+- No baseline measurements of the original agent (runtime, token usage, or a direct output comparison) were collected, so no before-and-after improvement is claimed.
+- Integrated end-to-end regression check: pending (see Status).
