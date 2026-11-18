@@ -59,4 +59,18 @@ Only the report step was converted: `scripts/audit_dependencies_deterministic.py
 
 - GitHub Actions run #12 for commit `5cbf331` completed successfully in 10m 54s (reported by the repository owner from GitHub; not inspected from the development environment). The run includes the dependency-audit tests in the gating `eval-gate` deterministic step.
 
+### Real npm verification (human-run wrapper)
+
+Reported by the repository owner (run outside the development environment; not re-run here):
+
+- Date: 2026-11-17.
+- Command: `bash scripts/run-dependency-audit.sh`, which ran the four allowlisted npm commands and passed their output to `scripts/audit_dependencies_deterministic.py`. The run completed successfully and produced the JSON and Markdown reports.
+- All four npm commands produced parseable results, and both `package-lock.json` files loaded successfully.
+- tracker-api: 14 vulnerable packages, 8 outdated.
+- tracker-client: 22 vulnerable packages, 15 outdated.
+- Total: 36 vulnerable packages, 23 outdated.
+- No AI model was used to generate the report.
+
+This verifies the deterministic report workflow against real npm output rather than only the hand-written fixtures. It does not establish a measured speed or cost improvement over the original agent, whose runtime and token usage were not measured.
+
 No before-and-after improvement can be stated for this conversion: the agent's runtime, token usage and output were not measured, so there is no baseline to compare against.
