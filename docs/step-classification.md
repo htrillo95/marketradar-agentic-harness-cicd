@@ -70,3 +70,14 @@ Review schedule: weak candidates are reviewed monthly; steps that are not curren
 
 - Recommendation: retained. The `dependency-auditor` agent runs four fixed commands, and `scripts/run-dependency-audit.sh` runs them for the report path; the agent remains the governed fallback because the policy and its tests require the role.
 - Next review: 2027-02-18.
+
+## Step: Project Manager task-outcome reporting (Module 4.3 Exercise 1)
+
+- Description: the final step of the full orchestration path (Planner -> Implementer -> Code Reviewer -> Tester -> Project Manager; `docs/module3/holdout-task-set.md` line 23, HO-02). It receives the task identifier, implementation summary, code review outcome, test results and requested final status as free text from the Orchestrator, decides the task outcome, and returns `### Task Outcome`, `### Evidence`, `### Storage Record` and `### Blockers` (`.claude/agents/project-manager.md` lines 14–17, 28, 30–53). This entry covers the outcome decision and report only, not the storage write.
+- Stability: insufficient evidence. Zero recorded runs: in HO-02, the only holdout that routes to this step, "The Project Manager never ran" (`docs/module3/calibration-log.md` line 308).
+- Repeatability: insufficient evidence. No repeated runs exist.
+- Specifiability: partial. The completion rule ("Never mark a task complete if review or testing failed", `.claude/agents/project-manager.md` line 17) and the output headings (lines 43–53) are defined, but interpreting free-text evidence ("Determine the task outcome from the evidence", line 16) and detecting contradictory evidence (line 28) require judgment.
+- Run rate: low. Zero recorded executions; HO-02 is the only holdout whose path reaches this step, and that run stopped at the human-approval checkpoint (`docs/module3/calibration-log.md` lines 305–308).
+- Known agent judgment / edge-case input: HO-05. Both code reviewers returned `VERDICT: APPROVE with conditions` with different conditions, and the final report withheld approval and deferred to the human (`docs/module3/calibration-log.md` lines 316 and 318). This is a recorded workflow edge case: a review outcome that is neither a pass nor a fail. There is no evidence that the Project Manager agent itself handled it; HO-05's path does not include the Project Manager, and no Project Manager transcript exists.
+- Recommendation: weak candidate.
+- Explanation: the core decision is a fixed rule with defined output headings, so part of the step could be expressed as code. But there is no stability or repeatability evidence, because the step has never run in any recorded log or harness result. Its inputs are free text, so mapping a result such as HO-05's "approve with conditions" to complete or not complete still needs judgment. Until the step has recorded runs and structured inputs, the evidence does not support a strong-candidate rating.
