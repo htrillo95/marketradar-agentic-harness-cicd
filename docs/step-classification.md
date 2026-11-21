@@ -81,3 +81,66 @@ Review schedule: weak candidates are reviewed monthly; steps that are not curren
 - Known agent judgment / edge-case input: HO-05. Both code reviewers returned `VERDICT: APPROVE with conditions` with different conditions, and the final report withheld approval and deferred to the human (`docs/module3/calibration-log.md` lines 316 and 318). This is a recorded workflow edge case: a review outcome that is neither a pass nor a fail. There is no evidence that the Project Manager agent itself handled it; HO-05's path does not include the Project Manager, and no Project Manager transcript exists.
 - Recommendation: weak candidate.
 - Explanation: the core decision is a fixed rule with defined output headings, so part of the step could be expressed as code. But there is no stability or repeatability evidence, because the step has never run in any recorded log or harness result. Its inputs are free text, so mapping a result such as HO-05's "approve with conditions" to complete or not complete still needs judgment. Until the step has recorded runs and structured inputs, the evidence does not support a strong-candidate rating.
+
+### Test plan (proposed, not implemented)
+
+Unit tests for a future deterministic replacement, following ADR-004's ordered decision rules (`docs/adr/ADR-004-project-manager-task-outcome-deterministic-conversion.md`, Decision). Inputs are the structured verdicts ADR-004 requires as a prerequisite. Unless a test says otherwise, the task identifier and requested final status are present. None of these tests exist yet.
+
+1. Normal success.
+   - Input: review `APPROVE`, test `PASS`, task identifier present, requested final status `COMPLETE`.
+   - Expected output: `COMPLETE` (rule 4), with no blockers.
+   - Purpose: confirms the only path to completion.
+2. Review failure.
+   - Input: review `REJECT`, test `PASS`.
+   - Expected output: `NOT COMPLETE` (rule 2), with the rejection listed under `### Blockers`.
+   - Purpose: enforces "Never mark a task complete if review or testing failed" (`.claude/agents/project-manager.md` line 17).
+3. HO-05 edge case.
+   - Input: two review verdicts, both `CONDITIONAL`, with different conditions; test `PASS`.
+   - Expected output: `HUMAN ESCALATION` (rule 1, contradictory inputs), with no complete or not-complete decision.
+   - Purpose: reproduces the recorded HO-05 outcome (`docs/module3/calibration-log.md` lines 316–318) and checks that conflicting conditional approvals are never auto-decided.
+4. Missing or unverified test result.
+   - Input: review `APPROVE` with the test result missing (rule 1), and separately review `APPROVE` with test `NOT_VERIFIED` (rule 3).
+   - Expected output: `HUMAN ESCALATION` in both cases.
+   - Purpose: checks that an absent or unverified test result never produces `COMPLETE`.
+5. Rule precedence.
+   - Input: review `REJECT`, test `NOT_VERIFIED`; and review `CONDITIONAL`, test `FAIL`.
+   - Expected output: `NOT COMPLETE` (rule 2) in both cases.
+   - Purpose: confirms that a failure (rule 2) takes precedence over rule-3 escalation for `CONDITIONAL` or `NOT_VERIFIED` outcomes, as ADR-004's first-match ordering requires.
+6. Requested status mismatch.
+   - Input: review `REJECT`, test `PASS`, requested final status `COMPLETE`.
+   - Expected output: `NOT COMPLETE` (rule 2), with the mismatch reported under `### Blockers` (ADR-004's requested-status paragraph).
+   - Purpose: confirms that the requested status does not change the decision.
+7. Contradiction before failure.
+   - Input: two review verdicts that differ, one `REJECT` and one `APPROVE`; test `PASS`.
+   - Expected output: `HUMAN ESCALATION` (rule 1), not `NOT COMPLETE`.
+   - Purpose: confirms that rule 1 escalation for contradictory inputs takes precedence over rule 2.
+
+### Measurement plan (proposed, no measurements exist)
+
+No Project Manager baseline exists: the agent has never run in a recorded log or harness result (`docs/module3/calibration-log.md` line 308). Baseline measurements of the agent must be collected first, on the same structured inputs later given to the replacement, before any before-and-after comparison can be made. No figures or savings are stated here.
+
+Evidence to record for both the agent (before) and the replacement (after):
+
+- Execution latency: wall-clock time per decision over repeated runs.
+- Token usage and inference cost: agent tokens and cost per run from the transcript's `result` usage fields; the replacement is expected to use no model, which must be confirmed rather than assumed.
+- Predictability: repeated runs on identical inputs, recording whether the outcome and report are identical each time.
+- Audit clarity and traceability: whether each decision can be traced to the input verdicts and the rule that fired, and whether escalations and blockers are recorded.
+- Quality and harness results: agreement between agent and replacement outcomes on the same inputs, including passing, failing and ambiguous cases, plus any deterministic harness checks and policy-suite results.
+
+Rubric dimensions that may become not applicable: the Module 3 rubric (`eval/module3/rubric.json`) defines Lint Result Accuracy, Error and Warning Coverage, and Recommendation Quality, and HO-02 lists all three (`docs/module3/holdout-task-set.md` line 29). With structured, templated output, Recommendation Quality and the prose-coverage part of Error and Warning Coverage may not apply; they should be recorded as not applicable rather than as failures. Outcome accuracy remains measurable.
+
+### Rollback plan (proposed)
+
+If the conversion proceeds, it should land as one focused commit containing only:
+
+- Deterministic replacement: the decision script, its unit tests (the test plan above) and any input schema for the structured verdicts.
+- Orchestrator instructions: the `CLAUDE.md` changes that make the Orchestrator pass structured verdicts and call the replacement.
+- Routing and tool grants: the `docs/routing-and-tool-grant-map.md` entry for the Project Manager.
+- Governance policy: the `docs/governance-policy.md` conversion-history bullet and changelog entry.
+- Agent artifacts: the modified `.claude/agents/project-manager.md`, which would no longer decide the outcome; its storage-write instructions stay unchanged.
+- CI integration: adding the new test file to the gating `eval-gate` deterministic step in `.github/workflows/ci.yml` and to `DETERMINISTIC_EVAL_FILES` in `eval/test_policy.py`.
+- Records: ADR-004's status change and this entry's classification change.
+
+Reverting that single commit restores the previous agent-based behaviour, the earlier Orchestrator instructions, grants, policy text and CI configuration, and ADR-004's Proposed status, without touching unrelated work.
+
+The MCP storage write (`mcp__storage__write_entry`) stays outside this commit and outside the conversion scope. It remains with the agent or the Orchestrator and is still blocked by policy gap D2, so a revert does not affect it.
