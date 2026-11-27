@@ -1,0 +1,15 @@
+{"timestamp": "2026-11-24T02:54:48.828281+00:00", "event": "run_created", "task_id": "MR-CAP-003"}
+{"timestamp": "2026-11-24T02:54:48.899165+00:00", "event": "role_started", "role": "planner", "label": "01-planner", "agent_role_env": "planner"}
+{"timestamp": "2026-11-24T02:55:12.905672+00:00", "event": "role_finished", "role": "planner", "label": "01-planner", "exit_code": 0, "status": "success", "files_changed": []}
+{"timestamp": "2026-11-24T02:55:12.909372+00:00", "event": "run_awaiting_approval", "reason": "human approval required: python3 scripts/orchestrate.py approve --run-dir /root/.marketradar/orchestration-runs/MR-CAP-003-20261124T025448Z --approved-by <name>"}
+{"timestamp": "2026-11-24T03:03:01.187513+00:00", "event": "plan_approved", "approved_by": "Hector", "plan_sha256": "a211c297f491e1aefb29943f44e802ae14854be8102a6a06bf2269c1d3aa14ae", "review_required": true}
+{"timestamp": "2026-11-24T03:03:04.010960+00:00", "event": "role_started", "role": "implementer", "label": "02-implementer-1", "agent_role_env": "implementer"}
+{"timestamp": "2026-11-24T03:03:25.336099+00:00", "event": "role_finished", "role": "implementer", "label": "02-implementer-1", "exit_code": 0, "status": "success", "files_changed": ["tracker-api/tests/routes/health.test.ts"]}
+{"timestamp": "2026-11-24T03:03:25.385260+00:00", "event": "role_started", "role": "reviewer", "label": "03-reviewer-1", "agent_role_env": "reviewer"}
+{"timestamp": "2026-11-24T03:03:50.097865+00:00", "event": "role_finished", "role": "reviewer", "label": "03-reviewer-1", "exit_code": 0, "status": "success", "files_changed": []}
+{"timestamp": "2026-11-24T03:03:50.098101+00:00", "event": "review_result", "attempt": 1, "verdict": "APPROVE", "explicit_verdict": "APPROVE", "high_findings": 0, "reasons": []}
+{"timestamp": "2026-11-24T03:03:50.145265+00:00", "event": "role_started", "role": "tester", "label": "04-tester-1", "agent_role_env": "tester"}
+{"timestamp": "2026-11-24T03:04:15.147965+00:00", "event": "role_finished", "role": "tester", "label": "04-tester-1", "exit_code": 0, "status": "success", "files_changed": []}
+{"timestamp": "2026-11-24T03:04:15.148151+00:00", "event": "test_result", "attempt": 1, "result": "PASS"}
+{"timestamp": "2026-11-24T03:04:15.149145+00:00", "event": "tester_command_check", "attempt": 1, "unauthorized": ["npm --prefix tracker-api test 2>&1 | tail -40"], "authorized_successes": 1, "parse_error": null}
+{"timestamp": "2026-11-24T03:04:15.152873+00:00", "event": "run_escalated", "reason": "tester attempt 1 ran or attempted Bash commands other than `npm --prefix tracker-api test`: ['npm --prefix tracker-api test 2>&1 | tail -40']"}

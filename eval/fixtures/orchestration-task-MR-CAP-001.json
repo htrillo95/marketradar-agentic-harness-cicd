@@ -1,0 +1,11 @@
+{
+  "task_id": "MR-CAP-001",
+  "goal": "Add Vitest regression tests for buildMarketplaceSearchUrl (exported from tracker-api/src/services/facebook-scraper.ts). Do not change application source code.",
+  "acceptance_criteria": [
+    "A new test file exists at tracker-api/tests/services/facebook-scraper.test.ts, mirroring the src path (project decision-002).",
+    "Tests cover: location slug is lowercased with whitespace removed; query, exact=false and radius appear as URL search parameters; maxPrice is included when it is a positive number; maxPrice is omitted when it is null, undefined or 0.",
+    "`npm --prefix tracker-api test` passes, including the existing 15 tests.",
+    "No file under tracker-api/src is modified."
+  ],
+  "context": "tracker-api uses Vitest 3 (`npm test` runs `vitest run`); existing tests live in tracker-api/tests/store/. Not a frozen holdout task."
+}

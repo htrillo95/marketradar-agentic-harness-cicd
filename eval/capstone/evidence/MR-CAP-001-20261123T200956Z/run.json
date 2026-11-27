@@ -1,0 +1,347 @@
+{
+  "run_id": "MR-CAP-001-20261123T200956Z",
+  "kind": "orchestrated_run",
+  "task": {
+    "task_id": "MR-CAP-001",
+    "goal": "Add Vitest regression tests for buildMarketplaceSearchUrl (exported from tracker-api/src/services/facebook-scraper.ts). Do not change application source code.",
+    "acceptance_criteria": [
+      "A new test file exists at tracker-api/tests/services/facebook-scraper.test.ts, mirroring the src path (project decision-002).",
+      "Tests cover: location slug is lowercased with whitespace removed; query, exact=false and radius appear as URL search parameters; maxPrice is included when it is a positive number; maxPrice is omitted when it is null, undefined or 0.",
+      "`npm --prefix tracker-api test` passes, including the existing 15 tests.",
+      "No file under tracker-api/src is modified."
+    ],
+    "context": "tracker-api uses Vitest 3 (`npm test` runs `vitest run`); existing tests live in tracker-api/tests/store/. Not a frozen holdout task."
+  },
+  "task_description": "Add Vitest regression tests for buildMarketplaceSearchUrl (exported from tracker-api/src/services/facebook-scraper.ts). Do not change application source code.",
+  "model": null,
+  "expected_roles": [
+    "planner",
+    "implementer",
+    "tester",
+    "project-manager"
+  ],
+  "status": "complete",
+  "created_at": "2026-11-23T20:09:56.039836+00:00",
+  "executions": [
+    {
+      "role": "planner",
+      "label": "01-planner",
+      "agent_role_env": "planner",
+      "transcript": "01-planner.jsonl",
+      "allowed_tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "mcp__retrieval__retrieve"
+      ],
+      "started_at": "2026-11-23T20:09:56.097467+00:00",
+      "ended_at": "2026-11-23T20:10:23.878812+00:00",
+      "exit_code": 0,
+      "session_id": "016c8397-9ba0-44c9-89bd-6f9ccfbf96ef",
+      "status": "success",
+      "is_error": false,
+      "total_cost_usd": 0.204459,
+      "available_tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "mcp__retrieval__retrieve"
+      ],
+      "tool_calls": [
+        {
+          "tool": "mcp__retrieval__retrieve",
+          "is_error": false
+        },
+        {
+          "tool": "Grep",
+          "is_error": false
+        },
+        {
+          "tool": "Glob",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Grep",
+          "is_error": false
+        }
+      ],
+      "permission_denials": [],
+      "files_changed": [],
+      "parse_error": null
+    },
+    {
+      "role": "implementer",
+      "label": "02-implementer-1",
+      "agent_role_env": "implementer",
+      "transcript": "02-implementer-1.jsonl",
+      "allowed_tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Edit",
+        "Write",
+        "mcp__retrieval__retrieve",
+        "mcp__storage__write_entry"
+      ],
+      "started_at": "2026-11-23T20:40:39.080165+00:00",
+      "ended_at": "2026-11-23T20:41:07.047684+00:00",
+      "exit_code": 0,
+      "session_id": "05b8d620-d4f1-4c9d-bc44-7a18d7881367",
+      "status": "success",
+      "is_error": false,
+      "total_cost_usd": 0.2427094,
+      "available_tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Edit",
+        "Write",
+        "mcp__retrieval__retrieve",
+        "mcp__storage__write_entry"
+      ],
+      "tool_calls": [
+        {
+          "tool": "mcp__retrieval__retrieve",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Glob",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Write",
+          "is_error": false
+        },
+        {
+          "tool": "mcp__storage__write_entry",
+          "is_error": false
+        }
+      ],
+      "permission_denials": [],
+      "files_changed": [
+        "tracker-api/tests/services/facebook-scraper.test.ts"
+      ],
+      "parse_error": null
+    },
+    {
+      "role": "tester",
+      "label": "03-tester-1",
+      "agent_role_env": "tester",
+      "transcript": "03-tester-1.jsonl",
+      "allowed_tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "mcp__retrieval__retrieve",
+        "Bash(npm --prefix tracker-api test)",
+        "Skill(run-tests)"
+      ],
+      "started_at": "2026-11-23T20:41:07.084631+00:00",
+      "ended_at": "2026-11-23T20:41:30.516722+00:00",
+      "exit_code": 0,
+      "session_id": "83ae1af9-8a0a-488b-a344-cc2a4b576b5c",
+      "status": "success",
+      "is_error": false,
+      "total_cost_usd": 0.2928412,
+      "available_tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash",
+        "mcp__retrieval__retrieve",
+        "Skill"
+      ],
+      "tool_calls": [
+        {
+          "tool": "mcp__retrieval__retrieve",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Grep",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Bash",
+          "is_error": false
+        }
+      ],
+      "permission_denials": [],
+      "files_changed": [],
+      "parse_error": null,
+      "result": "PASS"
+    },
+    {
+      "role": "project-manager",
+      "label": "04-project-manager",
+      "agent_role_env": "project-manager",
+      "transcript": "04-project-manager.jsonl",
+      "allowed_tools": [
+        "mcp__storage__write_entry"
+      ],
+      "started_at": "2026-11-23T20:41:30.555486+00:00",
+      "ended_at": "2026-11-23T20:41:49.392567+00:00",
+      "exit_code": 0,
+      "session_id": "0d70e37c-f99b-4292-9daa-8706f7196062",
+      "status": "success",
+      "is_error": false,
+      "total_cost_usd": 0.10725660000000001,
+      "available_tools": [
+        "mcp__storage__write_entry"
+      ],
+      "tool_calls": [
+        {
+          "tool": "mcp__storage__write_entry",
+          "is_error": false
+        }
+      ],
+      "permission_denials": [],
+      "files_changed": [],
+      "parse_error": null
+    }
+  ],
+  "updated_at": "2026-11-23T20:41:50.478823+00:00",
+  "plan": {
+    "path": "plan.md",
+    "sha256": "59ef358a786cce91d55da0cdea1facc8c8eff8570d8ad2af0eff90f459abc2c1",
+    "files": [
+      "tracker-api/tests/services/facebook-scraper.test.ts"
+    ]
+  },
+  "status_reason": "tester PASS",
+  "mcp_actions": {
+    "mcp_audit_log_present": true,
+    "actions": [
+      {
+        "server": "retrieval",
+        "timestamp": "2026-11-23T20:10:01.436614+00:00",
+        "role": "planner",
+        "operation": "retrieve",
+        "event": "classification_withheld",
+        "outcome": "classification_withheld"
+      },
+      {
+        "server": "retrieval",
+        "timestamp": "2026-11-23T20:10:01.436747+00:00",
+        "role": "planner",
+        "operation": "retrieve",
+        "event": "retrieval_success",
+        "outcome": "retrieval_success"
+      },
+      {
+        "server": "retrieval",
+        "timestamp": "2026-11-23T20:40:45.051304+00:00",
+        "role": "implementer",
+        "operation": "retrieve",
+        "event": "classification_withheld",
+        "outcome": "classification_withheld"
+      },
+      {
+        "server": "retrieval",
+        "timestamp": "2026-11-23T20:40:45.051392+00:00",
+        "role": "implementer",
+        "operation": "retrieve",
+        "event": "retrieval_success",
+        "outcome": "retrieval_success"
+      },
+      {
+        "server": "retrieval",
+        "timestamp": "2026-11-23T20:41:14.391695+00:00",
+        "role": "tester",
+        "operation": "retrieve",
+        "event": "classification_withheld",
+        "outcome": "classification_withheld"
+      },
+      {
+        "server": "retrieval",
+        "timestamp": "2026-11-23T20:41:14.391771+00:00",
+        "role": "tester",
+        "operation": "retrieve",
+        "event": "retrieval_success",
+        "outcome": "retrieval_success"
+      },
+      {
+        "server": "storage",
+        "timestamp": "2026-11-23T20:40:58.183019+00:00",
+        "role": "implementer",
+        "operation": "write_entry",
+        "event": "storage_write",
+        "outcome": "success"
+      },
+      {
+        "server": "storage",
+        "timestamp": "2026-11-23T20:41:40.624384+00:00",
+        "role": "project-manager",
+        "operation": "write_entry",
+        "event": "storage_write",
+        "outcome": "success"
+      },
+      {
+        "server": "storage",
+        "timestamp": "2026-11-23T20:41:50.301329+00:00",
+        "role": "orchestrator",
+        "operation": "read_entry",
+        "event": "storage_read",
+        "outcome": "success"
+      }
+    ],
+    "authorization_denials": [],
+    "unparseable_lines": 0
+  },
+  "approval": {
+    "approved_by": "Hector",
+    "approved_at": "2026-11-23T20:40:28.091497+00:00",
+    "plan_sha256": "59ef358a786cce91d55da0cdea1facc8c8eff8570d8ad2af0eff90f459abc2c1",
+    "approved_files": [
+      "tracker-api/tests/services/facebook-scraper.test.ts"
+    ]
+  },
+  "outcome_record": {
+    "key": "task-outcome/MR-CAP-001",
+    "verified": true,
+    "value": "COMPLETE\nImplementation: added tracker-api/tests/services/facebook-scraper.test.ts (new file, the only one touched). It holds 12 Vitest tests for buildMarketplaceSearchUrl. It mocks ../../src/lib/prisma before importing the scraper and checks parsed URL origin, pathname and searchParams. Coverage: location slug (origin, 'New York City' -> newyorkcity, whitespace and case normalization -> philadelphia), query (including a space), exact=false, radius=65, maxPrice=6500 included, maxPrice left out for null, undefined, 0 and a missing key. Placement follows decision-002. No changes under src, existing tests or config.\nReview: NOT_RUN. The Orchestrator says review was not required for this task, and the CLAUDE.md standard sequence has no review stage.\nTesting: PASS on Tester attempt 1. npm --prefix tracker-api test gave 3 files and 27/27 tests passing (15 existing + 12 new). All acceptance criteria were met.\nCaveats: the Tester could not run git diff, so the no-src-change criterion relies on the Orchestrator's list of changed files. Known gap that was out of scope: a negative maxPrice is still added to the URL (source uses if (params.maxPrice)), and nothing tests it. Non-integer radius is also untested."
+  }
+}

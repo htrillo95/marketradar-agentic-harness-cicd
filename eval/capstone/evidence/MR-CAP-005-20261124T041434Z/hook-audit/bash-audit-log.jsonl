@@ -1,0 +1,1 @@
+{"timestamp": "2026-11-25T01:09:58.749860+00:00", "event": "bash_command_authorized", "operation": "run_bash", "command": "npm --prefix tracker-api test", "role": "tester", "outcome": "authorized", "detail": "authorized orchestrated tester command: npm --prefix tracker-api test", "policy_reference": "docs/governance-policy.md"}
