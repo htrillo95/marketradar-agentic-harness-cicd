@@ -1,0 +1,392 @@
+{
+  "run_id": "MR-CAP-005-20261124T041434Z",
+  "kind": "orchestrated_run",
+  "task": {
+    "task_id": "MR-CAP-005",
+    "goal": "Add Vitest regression tests for the RunSearchError class (tracker-api/src/services/search-runner.ts) in a new test file. Change nothing else.",
+    "acceptance_criteria": [
+      "A new test file exists at tracker-api/tests/services/search-runner.test.ts, mirroring the src path (project decision-002). It mocks '../../src/lib/prisma' the same way tracker-api/tests/services/facebook-scraper.test.ts does and imports RunSearchError from '../../src/services/search-runner'.",
+      "new RunSearchError('boom') is an instance of both RunSearchError and Error, has name === 'RunSearchError' and message === 'boom'.",
+      "new RunSearchError('boom', { cause }) keeps the same cause object (asserted with toBe).",
+      "new RunSearchError('boom') without options has cause undefined.",
+      "The new file contains exactly three tests and does not call runSavedSearch.",
+      "The Orchestrator's measured changed-file list contains only tracker-api/tests/services/search-runner.test.ts, and no dependency is added.",
+      "`npm --prefix tracker-api test` passes, including all existing tests (currently 40 in 5 files)."
+    ],
+    "context": "RunSearchError (tracker-api/src/services/search-runner.ts lines 17-22) extends Error, passes (message, options) to super and sets this.name = 'RunSearchError'. No test covers it. search-runner.ts imports the listings and searches stores (which use Prisma) and the Facebook scraper module; tracker-api/tests/services/facebook-scraper.test.ts shows that vi.mock('../../src/lib/prisma', () => ({ prisma: {} })) is sufficient setup for importing these modules. tsconfig targets ES2022, so Error options with cause are supported. tracker-api uses Vitest 3 (`npm test` runs `vitest run`). File scope is verified by the Orchestrator from its own measurement of changed files. This is the live validation run for the D18 Tester command rules (v1.7.4): the orchestrated Tester may run only `npm --prefix tracker-api test`. This run uses the opt-in Code Reviewer stage (`plan --review`). Not a frozen holdout task."
+  },
+  "task_description": "Add Vitest regression tests for the RunSearchError class (tracker-api/src/services/search-runner.ts) in a new test file. Change nothing else.",
+  "model": null,
+  "expected_roles": [
+    "planner",
+    "implementer",
+    "reviewer",
+    "tester",
+    "project-manager"
+  ],
+  "review_required": true,
+  "status": "complete",
+  "created_at": "2026-11-24T04:14:34.435610+00:00",
+  "executions": [
+    {
+      "role": "planner",
+      "agent": "planner",
+      "label": "01-planner",
+      "agent_role_env": "planner",
+      "transcript": "01-planner.jsonl",
+      "allowed_tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "mcp__retrieval__retrieve"
+      ],
+      "started_at": "2026-11-24T04:14:34.498077+00:00",
+      "ended_at": "2026-11-24T04:14:53.629530+00:00",
+      "exit_code": 0,
+      "session_id": "61d82849-5735-4fc0-b679-1bac3063f09c",
+      "status": "success",
+      "is_error": false,
+      "total_cost_usd": 0.052527599999999994,
+      "available_tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "mcp__retrieval__retrieve"
+      ],
+      "tool_calls": [
+        {
+          "tool": "mcp__retrieval__retrieve",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Glob",
+          "is_error": false
+        },
+        {
+          "tool": "Glob",
+          "is_error": false
+        }
+      ],
+      "permission_denials": [],
+      "files_changed": [],
+      "parse_error": null
+    },
+    {
+      "role": "implementer",
+      "agent": "implementer",
+      "label": "02-implementer-1",
+      "agent_role_env": "implementer",
+      "transcript": "02-implementer-1.jsonl",
+      "allowed_tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Edit",
+        "Write",
+        "mcp__retrieval__retrieve",
+        "mcp__storage__write_entry"
+      ],
+      "started_at": "2026-11-25T01:09:12.396983+00:00",
+      "ended_at": "2026-11-25T01:09:31.971700+00:00",
+      "exit_code": 0,
+      "session_id": "64b764f4-6b3e-4801-a213-be708fb7501b",
+      "status": "success",
+      "is_error": false,
+      "total_cost_usd": 0.1394734,
+      "available_tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Edit",
+        "Write",
+        "mcp__retrieval__retrieve",
+        "mcp__storage__write_entry"
+      ],
+      "tool_calls": [
+        {
+          "tool": "mcp__retrieval__retrieve",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Glob",
+          "is_error": false
+        },
+        {
+          "tool": "Write",
+          "is_error": false
+        },
+        {
+          "tool": "mcp__storage__write_entry",
+          "is_error": false
+        }
+      ],
+      "permission_denials": [],
+      "files_changed": [
+        "tracker-api/tests/services/search-runner.test.ts"
+      ],
+      "parse_error": null
+    },
+    {
+      "role": "reviewer",
+      "agent": "marketradar-code-reviewer",
+      "label": "03-reviewer-1",
+      "agent_role_env": "reviewer",
+      "transcript": "03-reviewer-1.jsonl",
+      "allowed_tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "mcp__retrieval__retrieve"
+      ],
+      "started_at": "2026-11-25T01:09:32.019793+00:00",
+      "ended_at": "2026-11-25T01:09:50.364612+00:00",
+      "exit_code": 0,
+      "session_id": "57645e30-ebe4-45b7-b3af-f30bb2d97bde",
+      "status": "success",
+      "is_error": false,
+      "total_cost_usd": 0.1384252,
+      "available_tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "mcp__retrieval__retrieve"
+      ],
+      "tool_calls": [
+        {
+          "tool": "mcp__retrieval__retrieve",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Grep",
+          "is_error": false
+        },
+        {
+          "tool": "Grep",
+          "is_error": false
+        }
+      ],
+      "permission_denials": [],
+      "files_changed": [],
+      "parse_error": null,
+      "verdict": "APPROVE",
+      "explicit_verdict": "APPROVE",
+      "high_findings": 0
+    },
+    {
+      "role": "tester",
+      "agent": "tester",
+      "label": "04-tester-1",
+      "agent_role_env": "tester",
+      "transcript": "04-tester-1.jsonl",
+      "allowed_tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "mcp__retrieval__retrieve",
+        "Bash(npm --prefix tracker-api test)",
+        "Skill(run-tests)"
+      ],
+      "started_at": "2026-11-25T01:09:50.419031+00:00",
+      "ended_at": "2026-11-25T01:10:12.076138+00:00",
+      "exit_code": 0,
+      "session_id": "075c13a8-ab67-4fa2-81dd-c80f5da79054",
+      "status": "success",
+      "is_error": false,
+      "total_cost_usd": 0.235531,
+      "available_tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash",
+        "mcp__retrieval__retrieve",
+        "Skill"
+      ],
+      "tool_calls": [
+        {
+          "tool": "mcp__retrieval__retrieve",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Grep",
+          "is_error": false
+        },
+        {
+          "tool": "Grep",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Bash",
+          "is_error": false
+        }
+      ],
+      "permission_denials": [],
+      "files_changed": [],
+      "parse_error": null,
+      "result": "PASS",
+      "command_check": {
+        "unauthorized": [],
+        "authorized_successes": 1,
+        "parse_error": null
+      }
+    },
+    {
+      "role": "project-manager",
+      "agent": "project-manager",
+      "label": "05-project-manager",
+      "agent_role_env": "project-manager",
+      "transcript": "05-project-manager.jsonl",
+      "allowed_tools": [
+        "mcp__storage__write_entry"
+      ],
+      "started_at": "2026-11-25T01:10:12.129511+00:00",
+      "ended_at": "2026-11-25T01:10:24.283995+00:00",
+      "exit_code": 0,
+      "session_id": "698c8284-eb41-4946-b404-bcd72615eddc",
+      "status": "success",
+      "is_error": false,
+      "total_cost_usd": 0.09277359999999998,
+      "available_tools": [
+        "mcp__storage__write_entry"
+      ],
+      "tool_calls": [
+        {
+          "tool": "mcp__storage__write_entry",
+          "is_error": false
+        }
+      ],
+      "permission_denials": [],
+      "files_changed": [],
+      "parse_error": null
+    }
+  ],
+  "updated_at": "2026-11-25T01:10:25.394968+00:00",
+  "plan": {
+    "path": "plan.md",
+    "sha256": "052620dfb6a1f96995599294091b495f88760a2dc9fd0940ffc0f2229797fb62",
+    "files": [
+      "tracker-api/tests/services/search-runner.test.ts"
+    ]
+  },
+  "status_reason": "tester PASS",
+  "mcp_actions": {
+    "mcp_audit_log_present": true,
+    "actions": [
+      {
+        "server": "retrieval",
+        "timestamp": "2026-11-24T04:14:40.320332+00:00",
+        "role": "planner",
+        "operation": "retrieve",
+        "event": "retrieval_success",
+        "outcome": "retrieval_success"
+      },
+      {
+        "server": "retrieval",
+        "timestamp": "2026-11-25T01:09:19.344464+00:00",
+        "role": "implementer",
+        "operation": "retrieve",
+        "event": "classification_withheld",
+        "outcome": "classification_withheld"
+      },
+      {
+        "server": "retrieval",
+        "timestamp": "2026-11-25T01:09:19.344626+00:00",
+        "role": "implementer",
+        "operation": "retrieve",
+        "event": "retrieval_success",
+        "outcome": "retrieval_success"
+      },
+      {
+        "server": "retrieval",
+        "timestamp": "2026-11-25T01:09:37.726530+00:00",
+        "role": "reviewer",
+        "operation": "retrieve",
+        "event": "retrieval_success",
+        "outcome": "retrieval_success"
+      },
+      {
+        "server": "retrieval",
+        "timestamp": "2026-11-25T01:09:56.745270+00:00",
+        "role": "tester",
+        "operation": "retrieve",
+        "event": "retrieval_success",
+        "outcome": "retrieval_success"
+      },
+      {
+        "server": "storage",
+        "timestamp": "2026-11-25T01:09:25.358491+00:00",
+        "role": "implementer",
+        "operation": "write_entry",
+        "event": "storage_write",
+        "outcome": "success"
+      },
+      {
+        "server": "storage",
+        "timestamp": "2026-11-25T01:10:18.254635+00:00",
+        "role": "project-manager",
+        "operation": "write_entry",
+        "event": "storage_write",
+        "outcome": "success"
+      },
+      {
+        "server": "storage",
+        "timestamp": "2026-11-25T01:10:25.206560+00:00",
+        "role": "orchestrator",
+        "operation": "read_entry",
+        "event": "storage_read",
+        "outcome": "success"
+      }
+    ],
+    "authorization_denials": [],
+    "unparseable_lines": 0
+  },
+  "approval": {
+    "approved_by": "Hector",
+    "approved_at": "2026-11-24T04:21:11.280141+00:00",
+    "plan_sha256": "052620dfb6a1f96995599294091b495f88760a2dc9fd0940ffc0f2229797fb62",
+    "approved_files": [
+      "tracker-api/tests/services/search-runner.test.ts"
+    ],
+    "review_required": true
+  },
+  "outcome_record": {
+    "key": "task-outcome/MR-CAP-005",
+    "verified": true,
+    "value": "COMPLETE\nImplementation: Added tracker-api/tests/services/search-runner.test.ts (new, only changed file). Mocks ../../src/lib/prisma as { prisma: {} } (same pattern as facebook-scraper.test.ts) and imports only RunSearchError. One describe with exactly three it tests: (1) instanceof RunSearchError and Error, name 'RunSearchError', message 'boom'; (2) cause preserved by identity (toBe); (3) cause undefined when no options. No runSavedSearch reference; no source, config, package.json or lockfile changes.\nReview: APPROVE (Code Reviewer attempt 1). 0 High/Medium/Low findings. Assertions verified against search-runner.ts constructor (passes options to super, sets name). Scope confirmed: only the new test file changed.\nTests: PASS (Tester attempt 1). npm --prefix tracker-api test: 6 files passed, 43 tests passed (40 existing + 3 new). All 7 acceptance criteria met; no command denials or errors.\nNote (non-blocking): Implementer reports an internal lesson stored under lesson/MR-CAP-005; not present in working tree, likely in MCP storage. Storage location not independently verified."
+  }
+}

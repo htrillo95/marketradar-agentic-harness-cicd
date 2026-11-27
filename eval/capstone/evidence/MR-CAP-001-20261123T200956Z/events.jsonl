@@ -1,0 +1,14 @@
+{"timestamp": "2026-11-23T20:09:56.039936+00:00", "event": "run_created", "task_id": "MR-CAP-001"}
+{"timestamp": "2026-11-23T20:09:56.097501+00:00", "event": "role_started", "role": "planner", "label": "01-planner", "agent_role_env": "planner"}
+{"timestamp": "2026-11-23T20:10:23.878854+00:00", "event": "role_finished", "role": "planner", "label": "01-planner", "exit_code": 0, "status": "success", "files_changed": []}
+{"timestamp": "2026-11-23T20:10:23.882746+00:00", "event": "run_awaiting_approval", "reason": "human approval required: python3 scripts/orchestrate.py approve --run-dir /root/.marketradar/orchestration-runs/MR-CAP-001-20261123T200956Z --approved-by <name>"}
+{"timestamp": "2026-11-23T20:10:42.322260+00:00", "event": "implementation_refused", "reason": "no human approval recorded for this plan"}
+{"timestamp": "2026-11-23T20:40:28.092933+00:00", "event": "plan_approved", "approved_by": "Hector", "plan_sha256": "59ef358a786cce91d55da0cdea1facc8c8eff8570d8ad2af0eff90f459abc2c1"}
+{"timestamp": "2026-11-23T20:40:39.080198+00:00", "event": "role_started", "role": "implementer", "label": "02-implementer-1", "agent_role_env": "implementer"}
+{"timestamp": "2026-11-23T20:41:07.047712+00:00", "event": "role_finished", "role": "implementer", "label": "02-implementer-1", "exit_code": 0, "status": "success", "files_changed": ["tracker-api/tests/services/facebook-scraper.test.ts"]}
+{"timestamp": "2026-11-23T20:41:07.084657+00:00", "event": "role_started", "role": "tester", "label": "03-tester-1", "agent_role_env": "tester"}
+{"timestamp": "2026-11-23T20:41:30.516753+00:00", "event": "role_finished", "role": "tester", "label": "03-tester-1", "exit_code": 0, "status": "success", "files_changed": []}
+{"timestamp": "2026-11-23T20:41:30.516959+00:00", "event": "test_result", "attempt": 1, "result": "PASS"}
+{"timestamp": "2026-11-23T20:41:30.555509+00:00", "event": "role_started", "role": "project-manager", "label": "04-project-manager", "agent_role_env": "project-manager"}
+{"timestamp": "2026-11-23T20:41:49.392597+00:00", "event": "role_finished", "role": "project-manager", "label": "04-project-manager", "exit_code": 0, "status": "success", "files_changed": []}
+{"timestamp": "2026-11-23T20:41:50.479116+00:00", "event": "run_complete", "reason": "tester PASS"}

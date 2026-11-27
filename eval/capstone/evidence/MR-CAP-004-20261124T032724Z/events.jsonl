@@ -1,0 +1,15 @@
+{"timestamp": "2026-11-24T03:27:24.369297+00:00", "event": "run_created", "task_id": "MR-CAP-004"}
+{"timestamp": "2026-11-24T03:27:24.439292+00:00", "event": "role_started", "role": "planner", "label": "01-planner", "agent_role_env": "planner"}
+{"timestamp": "2026-11-24T03:27:41.067590+00:00", "event": "role_finished", "role": "planner", "label": "01-planner", "exit_code": 0, "status": "success", "files_changed": []}
+{"timestamp": "2026-11-24T03:27:41.071240+00:00", "event": "run_awaiting_approval", "reason": "human approval required: python3 scripts/orchestrate.py approve --run-dir /root/.marketradar/orchestration-runs/MR-CAP-004-20261124T032724Z --approved-by <name>"}
+{"timestamp": "2026-11-24T03:29:30.143318+00:00", "event": "plan_approved", "approved_by": "Hector", "plan_sha256": "7adff46b8a15ecb8b83f884291a296046636bf2122af89d20521f1bdf4df5943", "review_required": true}
+{"timestamp": "2026-11-24T03:30:51.830906+00:00", "event": "role_started", "role": "implementer", "label": "02-implementer-1", "agent_role_env": "implementer"}
+{"timestamp": "2026-11-24T03:31:12.595897+00:00", "event": "role_finished", "role": "implementer", "label": "02-implementer-1", "exit_code": 0, "status": "success", "files_changed": ["tracker-api/tests/services/facebook-scraper.test.ts"]}
+{"timestamp": "2026-11-24T03:31:12.648326+00:00", "event": "role_started", "role": "reviewer", "label": "03-reviewer-1", "agent_role_env": "reviewer"}
+{"timestamp": "2026-11-24T03:31:29.531761+00:00", "event": "role_finished", "role": "reviewer", "label": "03-reviewer-1", "exit_code": 0, "status": "success", "files_changed": []}
+{"timestamp": "2026-11-24T03:31:29.532029+00:00", "event": "review_result", "attempt": 1, "verdict": "APPROVE", "explicit_verdict": "APPROVE", "high_findings": 0, "reasons": []}
+{"timestamp": "2026-11-24T03:31:29.585100+00:00", "event": "role_started", "role": "tester", "label": "04-tester-1", "agent_role_env": "tester"}
+{"timestamp": "2026-11-24T03:31:49.367811+00:00", "event": "role_finished", "role": "tester", "label": "04-tester-1", "exit_code": 0, "status": "success", "files_changed": []}
+{"timestamp": "2026-11-24T03:31:49.367976+00:00", "event": "test_result", "attempt": 1, "result": "FAIL"}
+{"timestamp": "2026-11-24T03:31:49.368935+00:00", "event": "tester_command_check", "attempt": 1, "unauthorized": ["git -C /workspace status --porcelain"], "authorized_successes": 0, "parse_error": null}
+{"timestamp": "2026-11-24T03:31:49.372457+00:00", "event": "run_escalated", "reason": "tester attempt 1 ran or attempted Bash commands other than `npm --prefix tracker-api test`: ['git -C /workspace status --porcelain']"}

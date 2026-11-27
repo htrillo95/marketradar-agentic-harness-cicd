@@ -38,6 +38,9 @@ scikit-learn
 # rank-bm25: keyword-based BM25 fallback retrieval alongside vector search
 rank-bm25
 
+# sqlite-vec: SQLite vector index used by mcp-servers/retrieval (Module 3 backend)
+sqlite-vec==0.1.9
+
 # --- Document ingestion helpers ---
 # markdown / beautifulsoup4: parse Markdown and HTML lesson docs for ingestion
 markdown

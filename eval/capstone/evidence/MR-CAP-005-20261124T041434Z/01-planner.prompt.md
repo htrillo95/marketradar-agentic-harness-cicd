@@ -1,0 +1,26 @@
+## Role
+planner
+
+## Goal
+Add Vitest regression tests for the RunSearchError class (tracker-api/src/services/search-runner.ts) in a new test file. Change nothing else.
+
+## Acceptance Criteria
+- A new test file exists at tracker-api/tests/services/search-runner.test.ts, mirroring the src path (project decision-002). It mocks '../../src/lib/prisma' the same way tracker-api/tests/services/facebook-scraper.test.ts does and imports RunSearchError from '../../src/services/search-runner'.
+- new RunSearchError('boom') is an instance of both RunSearchError and Error, has name === 'RunSearchError' and message === 'boom'.
+- new RunSearchError('boom', { cause }) keeps the same cause object (asserted with toBe).
+- new RunSearchError('boom') without options has cause undefined.
+- The new file contains exactly three tests and does not call runSavedSearch.
+- The Orchestrator's measured changed-file list contains only tracker-api/tests/services/search-runner.test.ts, and no dependency is added.
+- `npm --prefix tracker-api test` passes, including all existing tests (currently 40 in 5 files).
+
+## Relevant Context
+RunSearchError (tracker-api/src/services/search-runner.ts lines 17-22) extends Error, passes (message, options) to super and sets this.name = 'RunSearchError'. No test covers it. search-runner.ts imports the listings and searches stores (which use Prisma) and the Facebook scraper module; tracker-api/tests/services/facebook-scraper.test.ts shows that vi.mock('../../src/lib/prisma', () => ({ prisma: {} })) is sufficient setup for importing these modules. tsconfig targets ES2022, so Error options with cause are supported. tracker-api uses Vitest 3 (`npm test` runs `vitest run`). File scope is verified by the Orchestrator from its own measurement of changed files. This is the live validation run for the D18 Tester command rules (v1.7.4): the orchestrated Tester may run only `npm --prefix tracker-api test`. This run uses the opt-in Code Reviewer stage (`plan --review`). Not a frozen holdout task.
+
+## Approved Files
+None. You do not modify files. Name every file the Implementer should create or modify under `### Files` as a repository-relative path in backticks.
+
+## Previous Result
+None.
+
+## Expected Output
+The `### Plan`, `### Files`, `### Risks` and `### Acceptance Check` sections from your definition.

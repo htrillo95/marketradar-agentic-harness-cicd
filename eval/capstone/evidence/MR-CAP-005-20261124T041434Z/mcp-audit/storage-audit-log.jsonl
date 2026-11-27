@@ -1,0 +1,3 @@
+{"timestamp": "2026-11-25T01:09:25.358491+00:00", "event": "storage_write", "operation": "write_entry", "role": "implementer", "outcome": "success", "detail": null, "policy_reference": "docs/governance-policy.md"}
+{"timestamp": "2026-11-25T01:10:18.254635+00:00", "event": "storage_write", "operation": "write_entry", "role": "project-manager", "outcome": "success", "detail": null, "policy_reference": "docs/governance-policy.md"}
+{"timestamp": "2026-11-25T01:10:25.206560+00:00", "event": "storage_read", "operation": "read_entry", "role": "orchestrator", "outcome": "success", "detail": null, "policy_reference": "docs/governance-policy.md"}

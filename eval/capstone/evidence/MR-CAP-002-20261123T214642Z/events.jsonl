@@ -1,0 +1,16 @@
+{"timestamp": "2026-11-23T21:46:42.110069+00:00", "event": "run_created", "task_id": "MR-CAP-002"}
+{"timestamp": "2026-11-23T21:46:42.180883+00:00", "event": "role_started", "role": "planner", "label": "01-planner", "agent_role_env": "planner"}
+{"timestamp": "2026-11-23T21:47:05.303731+00:00", "event": "role_finished", "role": "planner", "label": "01-planner", "exit_code": 0, "status": "success", "files_changed": []}
+{"timestamp": "2026-11-23T21:47:05.307730+00:00", "event": "run_awaiting_approval", "reason": "human approval required: python3 scripts/orchestrate.py approve --run-dir /root/.marketradar/orchestration-runs/MR-CAP-002-20261123T214642Z --approved-by <name>"}
+{"timestamp": "2026-11-24T01:31:56.365641+00:00", "event": "plan_approved", "approved_by": "Hector", "plan_sha256": "ba38461f35867a55fe26d3a62f68c785aa84901edfdc7f11f46b4d82f8e67159", "review_required": true}
+{"timestamp": "2026-11-24T01:31:59.635031+00:00", "event": "role_started", "role": "implementer", "label": "02-implementer-1", "agent_role_env": "implementer"}
+{"timestamp": "2026-11-24T01:32:22.926694+00:00", "event": "role_finished", "role": "implementer", "label": "02-implementer-1", "exit_code": 0, "status": "success", "files_changed": ["tracker-api/src/services/connections/index.ts", "tracker-api/tests/services/connections/index.test.ts"]}
+{"timestamp": "2026-11-24T01:32:22.966421+00:00", "event": "role_started", "role": "reviewer", "label": "03-reviewer-1", "agent_role_env": "reviewer"}
+{"timestamp": "2026-11-24T01:32:43.012636+00:00", "event": "role_finished", "role": "reviewer", "label": "03-reviewer-1", "exit_code": 0, "status": "success", "files_changed": []}
+{"timestamp": "2026-11-24T01:32:43.012919+00:00", "event": "review_result", "attempt": 1, "verdict": "APPROVE", "explicit_verdict": "APPROVE", "high_findings": 0, "reasons": []}
+{"timestamp": "2026-11-24T01:32:43.056411+00:00", "event": "role_started", "role": "tester", "label": "04-tester-1", "agent_role_env": "tester"}
+{"timestamp": "2026-11-24T01:33:08.185270+00:00", "event": "role_finished", "role": "tester", "label": "04-tester-1", "exit_code": 0, "status": "success", "files_changed": []}
+{"timestamp": "2026-11-24T01:33:08.185447+00:00", "event": "test_result", "attempt": 1, "result": "PASS"}
+{"timestamp": "2026-11-24T01:33:08.224632+00:00", "event": "role_started", "role": "project-manager", "label": "05-project-manager", "agent_role_env": "project-manager"}
+{"timestamp": "2026-11-24T01:33:20.920510+00:00", "event": "role_finished", "role": "project-manager", "label": "05-project-manager", "exit_code": 0, "status": "success", "files_changed": []}
+{"timestamp": "2026-11-24T01:33:22.035798+00:00", "event": "run_complete", "reason": "tester PASS"}

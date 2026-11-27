@@ -1,0 +1,436 @@
+{
+  "run_id": "MR-CAP-002-20261123T214642Z",
+  "kind": "orchestrated_run",
+  "task": {
+    "task_id": "MR-CAP-002",
+    "goal": "Make getConnectionService (tracker-api/src/services/connections/index.ts) return null for any providerId that is not a registered provider, including names inherited from Object.prototype, and add Vitest regression tests for the connection-service registry. Change nothing else.",
+    "acceptance_criteria": [
+      "getConnectionService returns null for any providerId that is not an own key of the registry, including the inherited names toString, constructor, __proto__ and hasOwnProperty, an unknown provider such as craigslist, and the empty string.",
+      "getConnectionService('facebook') returns facebookConnectionService, and listConnectionServices() returns exactly [facebookConnectionService].",
+      "A new test file exists at tracker-api/tests/services/connections/index.test.ts, mirroring the src path (project decision-002), covering the two criteria above. The tests do not call getConnection, connect, reconnect or disconnect, so they do not touch the file system.",
+      "The only application source change is in tracker-api/src/services/connections/index.ts. No route, type or other src file is modified, and no dependency is added.",
+      "`npm --prefix tracker-api test` passes, including the existing 27 tests."
+    ],
+    "context": "getConnectionService currently checks `providerId in services`, which is also true for names inherited from Object.prototype, so GET /connections/toString reaches service.getConnection on a non-service value and returns 500 instead of the route's existing 404 (tracker-api/src/routes/connections.ts). tsconfig targets ES2022, so Object.hasOwn is available. tracker-api uses Vitest 3 (`npm test` runs `vitest run`); existing tests live in tracker-api/tests/store/ and tracker-api/tests/services/. This run uses the opt-in Code Reviewer stage (`plan --review`). Not a frozen holdout task."
+  },
+  "task_description": "Make getConnectionService (tracker-api/src/services/connections/index.ts) return null for any providerId that is not a registered provider, including names inherited from Object.prototype, and add Vitest regression tests for the connection-service registry. Change nothing else.",
+  "model": null,
+  "expected_roles": [
+    "planner",
+    "implementer",
+    "reviewer",
+    "tester",
+    "project-manager"
+  ],
+  "review_required": true,
+  "status": "complete",
+  "created_at": "2026-11-23T21:46:42.109863+00:00",
+  "executions": [
+    {
+      "role": "planner",
+      "agent": "planner",
+      "label": "01-planner",
+      "agent_role_env": "planner",
+      "transcript": "01-planner.jsonl",
+      "allowed_tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "mcp__retrieval__retrieve"
+      ],
+      "started_at": "2026-11-23T21:46:42.180855+00:00",
+      "ended_at": "2026-11-23T21:47:05.303696+00:00",
+      "exit_code": 0,
+      "session_id": "22ad39eb-586e-4ff4-a03a-f741c4eb91e3",
+      "status": "success",
+      "is_error": false,
+      "total_cost_usd": 0.1354708,
+      "available_tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "mcp__retrieval__retrieve"
+      ],
+      "tool_calls": [
+        {
+          "tool": "mcp__retrieval__retrieve",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Glob",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Glob",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        }
+      ],
+      "permission_denials": [],
+      "files_changed": [],
+      "parse_error": null
+    },
+    {
+      "role": "implementer",
+      "agent": "implementer",
+      "label": "02-implementer-1",
+      "agent_role_env": "implementer",
+      "transcript": "02-implementer-1.jsonl",
+      "allowed_tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Edit",
+        "Write",
+        "mcp__retrieval__retrieve",
+        "mcp__storage__write_entry"
+      ],
+      "started_at": "2026-11-24T01:31:59.635001+00:00",
+      "ended_at": "2026-11-24T01:32:22.926664+00:00",
+      "exit_code": 0,
+      "session_id": "533f11a8-3364-43c7-9ea2-73282853d283",
+      "status": "success",
+      "is_error": false,
+      "total_cost_usd": 0.15536280000000002,
+      "available_tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Edit",
+        "Write",
+        "mcp__retrieval__retrieve",
+        "mcp__storage__write_entry"
+      ],
+      "tool_calls": [
+        {
+          "tool": "mcp__retrieval__retrieve",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Glob",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Grep",
+          "is_error": false
+        },
+        {
+          "tool": "Edit",
+          "is_error": false
+        },
+        {
+          "tool": "Write",
+          "is_error": false
+        },
+        {
+          "tool": "mcp__storage__write_entry",
+          "is_error": false
+        }
+      ],
+      "permission_denials": [],
+      "files_changed": [
+        "tracker-api/src/services/connections/index.ts",
+        "tracker-api/tests/services/connections/index.test.ts"
+      ],
+      "parse_error": null
+    },
+    {
+      "role": "reviewer",
+      "agent": "marketradar-code-reviewer",
+      "label": "03-reviewer-1",
+      "agent_role_env": "reviewer",
+      "transcript": "03-reviewer-1.jsonl",
+      "allowed_tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "mcp__retrieval__retrieve"
+      ],
+      "started_at": "2026-11-24T01:32:22.966396+00:00",
+      "ended_at": "2026-11-24T01:32:43.012607+00:00",
+      "exit_code": 0,
+      "session_id": "6e267ac4-0182-4fe0-8a66-1830cae0568c",
+      "status": "success",
+      "is_error": false,
+      "total_cost_usd": 0.1447854,
+      "available_tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "mcp__retrieval__retrieve"
+      ],
+      "tool_calls": [
+        {
+          "tool": "mcp__retrieval__retrieve",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Grep",
+          "is_error": false
+        },
+        {
+          "tool": "Glob",
+          "is_error": false
+        }
+      ],
+      "permission_denials": [],
+      "files_changed": [],
+      "parse_error": null,
+      "verdict": "APPROVE",
+      "explicit_verdict": "APPROVE",
+      "high_findings": 0
+    },
+    {
+      "role": "tester",
+      "agent": "tester",
+      "label": "04-tester-1",
+      "agent_role_env": "tester",
+      "transcript": "04-tester-1.jsonl",
+      "allowed_tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "mcp__retrieval__retrieve",
+        "Bash(npm --prefix tracker-api test)",
+        "Skill(run-tests)"
+      ],
+      "started_at": "2026-11-24T01:32:43.056382+00:00",
+      "ended_at": "2026-11-24T01:33:08.185240+00:00",
+      "exit_code": 0,
+      "session_id": "adcfb774-8291-4d52-9ea2-1fda79f5d0fc",
+      "status": "success",
+      "is_error": false,
+      "total_cost_usd": 0.26178840000000003,
+      "available_tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash",
+        "mcp__retrieval__retrieve",
+        "Skill"
+      ],
+      "tool_calls": [
+        {
+          "tool": "mcp__retrieval__retrieve",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        },
+        {
+          "tool": "Glob",
+          "is_error": false
+        },
+        {
+          "tool": "Bash",
+          "is_error": false
+        },
+        {
+          "tool": "Read",
+          "is_error": false
+        }
+      ],
+      "permission_denials": [],
+      "files_changed": [],
+      "parse_error": null,
+      "result": "PASS"
+    },
+    {
+      "role": "project-manager",
+      "agent": "project-manager",
+      "label": "05-project-manager",
+      "agent_role_env": "project-manager",
+      "transcript": "05-project-manager.jsonl",
+      "allowed_tools": [
+        "mcp__storage__write_entry"
+      ],
+      "started_at": "2026-11-24T01:33:08.224609+00:00",
+      "ended_at": "2026-11-24T01:33:20.920482+00:00",
+      "exit_code": 0,
+      "session_id": "f5f64d87-46e5-4c41-9621-4ab2872fd5c6",
+      "status": "success",
+      "is_error": false,
+      "total_cost_usd": 0.09435439999999999,
+      "available_tools": [
+        "mcp__storage__write_entry"
+      ],
+      "tool_calls": [
+        {
+          "tool": "mcp__storage__write_entry",
+          "is_error": false
+        }
+      ],
+      "permission_denials": [],
+      "files_changed": [],
+      "parse_error": null
+    }
+  ],
+  "updated_at": "2026-11-24T01:33:22.035511+00:00",
+  "plan": {
+    "path": "plan.md",
+    "sha256": "ba38461f35867a55fe26d3a62f68c785aa84901edfdc7f11f46b4d82f8e67159",
+    "files": [
+      "tracker-api/src/services/connections/index.ts",
+      "tracker-api/tests/services/connections/index.test.ts"
+    ]
+  },
+  "status_reason": "tester PASS",
+  "mcp_actions": {
+    "mcp_audit_log_present": true,
+    "actions": [
+      {
+        "server": "retrieval",
+        "timestamp": "2026-11-23T21:46:48.223811+00:00",
+        "role": "planner",
+        "operation": "retrieve",
+        "event": "classification_withheld",
+        "outcome": "classification_withheld"
+      },
+      {
+        "server": "retrieval",
+        "timestamp": "2026-11-23T21:46:48.223984+00:00",
+        "role": "planner",
+        "operation": "retrieve",
+        "event": "retrieval_success",
+        "outcome": "retrieval_success"
+      },
+      {
+        "server": "retrieval",
+        "timestamp": "2026-11-24T01:32:06.342024+00:00",
+        "role": "implementer",
+        "operation": "retrieve",
+        "event": "classification_withheld",
+        "outcome": "classification_withheld"
+      },
+      {
+        "server": "retrieval",
+        "timestamp": "2026-11-24T01:32:06.342111+00:00",
+        "role": "implementer",
+        "operation": "retrieve",
+        "event": "retrieval_success",
+        "outcome": "retrieval_success"
+      },
+      {
+        "server": "retrieval",
+        "timestamp": "2026-11-24T01:32:29.154458+00:00",
+        "role": "reviewer",
+        "operation": "retrieve",
+        "event": "classification_withheld",
+        "outcome": "classification_withheld"
+      },
+      {
+        "server": "retrieval",
+        "timestamp": "2026-11-24T01:32:29.154537+00:00",
+        "role": "reviewer",
+        "operation": "retrieve",
+        "event": "retrieval_success",
+        "outcome": "retrieval_success"
+      },
+      {
+        "server": "retrieval",
+        "timestamp": "2026-11-24T01:32:50.475117+00:00",
+        "role": "tester",
+        "operation": "retrieve",
+        "event": "classification_withheld",
+        "outcome": "classification_withheld"
+      },
+      {
+        "server": "retrieval",
+        "timestamp": "2026-11-24T01:32:50.475283+00:00",
+        "role": "tester",
+        "operation": "retrieve",
+        "event": "retrieval_success",
+        "outcome": "retrieval_success"
+      },
+      {
+        "server": "storage",
+        "timestamp": "2026-11-24T01:32:16.039319+00:00",
+        "role": "implementer",
+        "operation": "write_entry",
+        "event": "storage_write",
+        "outcome": "success"
+      },
+      {
+        "server": "storage",
+        "timestamp": "2026-11-24T01:33:14.026793+00:00",
+        "role": "project-manager",
+        "operation": "write_entry",
+        "event": "storage_write",
+        "outcome": "success"
+      },
+      {
+        "server": "storage",
+        "timestamp": "2026-11-24T01:33:21.840991+00:00",
+        "role": "orchestrator",
+        "operation": "read_entry",
+        "event": "storage_read",
+        "outcome": "success"
+      }
+    ],
+    "authorization_denials": [],
+    "unparseable_lines": 0
+  },
+  "approval": {
+    "approved_by": "Hector",
+    "approved_at": "2026-11-24T01:31:56.364559+00:00",
+    "plan_sha256": "ba38461f35867a55fe26d3a62f68c785aa84901edfdc7f11f46b4d82f8e67159",
+    "approved_files": [
+      "tracker-api/src/services/connections/index.ts",
+      "tracker-api/tests/services/connections/index.test.ts"
+    ],
+    "review_required": true
+  },
+  "outcome_record": {
+    "key": "task-outcome/MR-CAP-002",
+    "verified": true,
+    "value": "COMPLETE\nImplementation: getConnectionService in tracker-api/src/services/connections/index.ts now uses Object.hasOwn(services, providerId) instead of `providerId in services`, so inherited Object.prototype names return null. New test file tracker-api/tests/services/connections/index.test.ts (mirrors src path per decision-002) adds 8 tests: facebook identity, 6 null cases (toString, constructor, __proto__, hasOwnProperty, craigslist, ''), and listConnectionServices identity. No mocks, no I/O, no new dependencies.\nReview: APPROVE (attempt 1), 0 findings.\nTests: PASS (attempt 1). npm --prefix tracker-api test passed 4/4 files and 35/35 tests (27 existing + 8 new). All 5 acceptance criteria met.\nResidual (non-blocking): tsc build not run (ES2022 lib includes Object.hasOwn); git diff not run, so scope relies on the reported two-file change list; classification of Implementer's lesson/MR-CAP-002 write not checked."
+  }
+}

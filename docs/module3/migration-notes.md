@@ -91,3 +91,40 @@ Sources: `docs/module3/calibration-log.md`, `module-3-reflection.md`, `module-3-
 8. **Role model mismatch:** Module 3 roles (`planner`, `verifier`, `project_manager` and `code-reviewer` in `mcp/roles.allowlist.json`, with a SQLite store under `/memory`) don't match Module 4's governed roles (`orchestrator`, `implementer`, `reviewer`, `tester`, `project-manager`). `scripts/run-agent.sh` rejects `planner`. Reconciling them is future Module 4 governance work.
 9. **Scraper runtime:** `tracker-api`'s Playwright scraper needs Chromium, which the course image doesn't install. The Vitest suite mocks Prisma and doesn't need it. A real `DATABASE_URL` is needed for anything beyond the tests.
 10. **Agent references:** Module 3 docs and evidence still call this agent `code-reviewer`. Those are historical references and were left unedited.
+
+## 7. Capstone Milestone 1: Module 3 backends behind Module 4 governance
+
+The Module 3 storage and retrieval *backends* now run inside the Module 4 servers. `mcp-servers/` stays the only runtime MCP server set. `mcp/` is unchanged and remains Module 3 reference and evidence.
+
+- **Storage** (`mcp-servers/storage/server.py`): the JSON sample store is replaced by the Module 3 SQLite pattern (WAL, schema created on open, soft delete, `last_updated`). The default store is `storage-store.db` next to the audit log; `STORAGE_STORE` overrides it.
+- **Retrieval** (`mcp-servers/retrieval/server.py`): the lexical stub is replaced by the Module 3 search: `all-MiniLM-L6-v2` embeddings in a sqlite-vec cosine index (threshold `RETRIEVAL_SIMILARITY_THRESHOLD`, default 0.65), with an FTS5/BM25 keyword fallback. `corpus.json` is always indexed. Setting `RETRIEVAL_REFERENCE_DIR` also indexes the Module 3 reference markdown, chunked by paragraph and classified from front matter. Missing or unknown classifications fail closed to `confidential`. If sqlite-vec or the model cannot load, retrieval falls back to keyword search and writes a warning to stderr. The success audit detail records `via vector` or `via keyword`.
+- **Unchanged:** tool names and signatures (`write_entry(key, value)`, `retrieve(query, top_k)`, …), `allow-list.json` files, `AGENT_ROLE` authorization and audit record fields. The Module 3 self-declared `calling_role` argument and `mcp/roles.allowlist.json` are **not** used, because a client-supplied role cannot be trusted. Module 3's `project_id` scoping is not carried over, because the Module 4 contract has no project parameter.
+- **Tests:** `eval/test_mcp_integration.py` covers persistence across real server restarts, real-process denials, vector retrieval, keyword fallback and the ceiling on reference documents. `eval/test_policy.py` changed only for the SQLite store file.
+- **Still open:** D2 (the servers are not registered with Claude Code, and agent bodies still use Module 3 argument shapes).
+
+## 8. Capstone Milestone 2: live orchestration evidence
+
+`scripts/orchestrate.py` ran MR-CAP-001 (`eval/fixtures/orchestration-task-MR-CAP-001.json`) as one run, `MR-CAP-001-20261123T200956Z`. The run directory is outside the repository; a copy that passed a secret scan is preserved in `eval/capstone/evidence/` (provenance, exclusions and checksums are in `eval/capstone/README.md`).
+
+**Sequence (from `events.jsonl`):**
+- Planner finished at 20:10:23 and the run stopped for approval.
+- An attempt to run before approval was refused at 20:10:42 (`implementation_refused`, "no human approval recorded for this plan").
+- A human approved the plan at 20:40:28 (`plan_approved`, plan SHA-256 `59ef358a…abc2c1`).
+- The Implementer, Tester (PASS on attempt 1) and Project Manager ran, and the run finished `complete` at 20:41:50.
+
+**What this run demonstrated live (D2 and D7 below are as stated in `docs/governance-policy.md`, which has not been updated):**
+- **MCP servers reachable from agent sessions.** Child sessions reached the project-registered storage and retrieval servers, and each server took the role from `AGENT_ROLE`. There were 9 audit actions and 0 authorization denials. This contradicts D2's statement that agent sessions can't reach the servers.
+- **Retrieval for the Planner, Implementer and Tester.** All three reached the retrieval server (under `--permission-mode dontAsk` with `--allowedTools`), and each retrieval logged one `classification_withheld` event, where a result above the `internal` ceiling was held back. This contradicts D7 for these launch settings.
+- **No permission denials** in any of the four child sessions.
+- **Implementer changed only the approved file** (`tracker-api/tests/services/facebook-scraper.test.ts`). Nothing under `tracker-api/src` changed.
+- **Tests:** the Tester ran `npm --prefix tracker-api test` and got 27/27 passed (15 existing + 12 new).
+- **Outcome record:** the Project Manager wrote `task-outcome/MR-CAP-001`, and the orchestrator read it back (`verified: true`).
+
+**Not demonstrated by this run:**
+- Tester FAIL → Implementer retry and escalation (attempt 1 passed). These paths are covered only by fake-binary tests in `eval/test_orchestration.py`.
+- A Code Reviewer stage. The orchestrated sequence has none, and the Project Manager was told review was `NOT_RUN`.
+- Any holdout task.
+
+The Implementer also wrote one `lesson/MR-CAP-001` storage entry. Its grant allows this, but the approved plan did not mention it.
+
+The evaluation of this run is recorded in `docs/calibration-log.md`, "Capstone Milestone 3".
