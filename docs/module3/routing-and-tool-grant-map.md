@@ -73,6 +73,7 @@ Steps 1–11 of the historical Routing list remain the base sequence. When a tas
    - The Orchestrator routes High-severity findings, or a rejecting assessment, back to Implementer (step 5).
    - The Orchestrator escalates disagreements to the human.
    - A rejecting review never becomes an automatic approval.
+   - *Implemented (Capstone Milestone 3):* `scripts/orchestrate.py plan --review`. A rejecting review is any `Severity: High` finding, an explicit REJECT verdict, or no readable verdict. It goes back to Implementer before testing, and it counts against the same attempt limit as a Tester FAIL (`docs/governance-policy.md`, reconciliation note 2).
 7. Orchestrator sends the implementation to Tester.
 8. Tester returns PASS or FAIL.
 9. On FAIL, the Orchestrator routes the findings back to Implementer. After changes, review (if required) and testing run again. Repeated failure is escalated to the human.
