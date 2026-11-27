@@ -132,6 +132,13 @@ jobs:
         if: needs.change-type-check.outputs.agent-affecting == 'true'
         run: docker build -t agentic_engineer_4 .
 
+      # Capstone Milestone 3: eval/test_orchestration.py (orchestrator routing,
+      # approval gate, retry and escalation, with a fake claude binary) and
+      # eval/test_orchestrated_run_evaluator.py (evaluator on the preserved
+      # MR-CAP-001 evidence) make no model or network calls.
+      # eval/test_mcp_integration.py is not run here: its vector tests need the
+      # all-MiniLM-L6-v2 model, which the image does not download at build time;
+      # its cache (HF_HOME) is under /workspace, which this step mounts read-only.
       - name: Run deterministic evaluations
         id: deterministic
         if: needs.change-type-check.outputs.agent-affecting == 'true'
@@ -142,7 +149,7 @@ jobs:
             -v "$GITHUB_WORKSPACE/ci-artifacts":/reports \
             -w /workspace \
             agentic_engineer_4 \
-            python -m pytest eval/test_deterministic.py eval/test_deterministic_router.py eval/test_deterministic_step.py eval/test_deterministic_dependency_audit.py -v \
+            python -m pytest eval/test_deterministic.py eval/test_deterministic_router.py eval/test_deterministic_step.py eval/test_deterministic_dependency_audit.py eval/test_orchestration.py eval/test_orchestrated_run_evaluator.py -v \
               --json-report \
               --json-report-file=/reports/deterministic-report.json
 

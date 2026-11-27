@@ -155,7 +155,7 @@ def _load_server(server, role, monkeypatch, tmp_path, set_store=True):
     monkeypatch.setenv("STORAGE_AUDIT_LOG", str(tmp_path / "storage-audit-log.jsonl"))
     monkeypatch.setenv("RETRIEVAL_AUDIT_LOG", str(tmp_path / "retrieval-audit-log.jsonl"))
     if set_store:
-        monkeypatch.setenv("STORAGE_STORE", str(tmp_path / "store.json"))
+        monkeypatch.setenv("STORAGE_STORE", str(tmp_path / "store.db"))
     else:
         monkeypatch.delenv("STORAGE_STORE", raising=False)
     spec = importlib.util.spec_from_file_location(
@@ -264,11 +264,14 @@ def test_non_runtime_names_denied_retrieve(name, monkeypatch, tmp_path):
 
 def test_storage_store_defaults_next_to_audit_log(monkeypatch, tmp_path):
     server = _load_server("storage", "implementer", monkeypatch, tmp_path, set_store=False)
-    expected_store = tmp_path / "storage-store.json"
+    expected_store = tmp_path / "storage-store.db"
     assert server.STORE_PATH == expected_store
     _call(server, "write_entry", {"key": "k", "value": "v"})
     assert expected_store.exists()
-    assert json.loads(expected_store.read_text(encoding="utf-8")) == {"k": "v"}
+    import sqlite3
+    with sqlite3.connect(expected_store) as conn:
+        rows = conn.execute("SELECT key, value, deleted FROM entries").fetchall()
+    assert rows == [("k", "v", 0)]
 
 
 # ---------------------------------------------------------------------------
@@ -816,12 +819,13 @@ AUDITOR_DENIED_COMMANDS = [
 ]
 
 
-def _run_bash_hook(payload_text, tmp_path):
+def _run_bash_hook(payload_text, tmp_path, extra_env=None):
     env = {
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         "HOME": str(tmp_path / "home"),
         "BASH_AUDIT_LOG": str(tmp_path / "bash-audit-log.jsonl"),
         "CLAUDE_PROJECT_DIR": str(REPO_ROOT),
+        **(extra_env or {}),
     }
     return subprocess.run(
         [sys.executable, "-I", str(BASH_HOOK)],
@@ -897,6 +901,142 @@ def test_bash_hook_fails_closed_on_unreadable_input(raw, tmp_path):
     assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
+# ---------------------------------------------------------------------------
+# Capstone D18: exact Tester command in orchestrated sessions.
+# ---------------------------------------------------------------------------
+
+ORCHESTRATED_TESTER_COMMAND = "npm --prefix tracker-api test"
+
+
+def _load_module(path):
+    sys.dont_write_bytecode = True
+    spec = importlib.util.spec_from_file_location(f"_d18_{path.stem}_{uuid.uuid4().hex}", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _orchestrated_env(tmp_path, role="tester"):
+    return {"AGENT_ROLE": role, "ORCHESTRATION_RUN_DIR": str(tmp_path / "run")}
+
+
+def _tester_payload(command, agent_type=None, **tool_input):
+    payload = {"hook_event_name": "PreToolUse", "tool_name": "Bash",
+               "tool_input": {"command": command, **tool_input}}
+    if agent_type is not None:
+        payload["agent_type"] = agent_type
+    return json.dumps(payload)
+
+
+ORCHESTRATED_TESTER_DENIED_COMMANDS = [
+    "npm --prefix tracker-api test 2>&1 | tail -40",  # MR-CAP-002
+    "npm --prefix tracker-api test | tail -40",
+    "npm --prefix tracker-api test > out.txt",
+    "npm --prefix tracker-api test 2>&1",
+    "npm --prefix tracker-api test >> /tmp/log",
+    "npm --prefix tracker-api test < /dev/null",
+    "npm --prefix tracker-api test && rm -rf tracker-api",
+    "npm --prefix tracker-api test; git diff",
+    "npm --prefix tracker-api test || true",
+    "npm --prefix tracker-api test &",
+    "npm --prefix tracker-api test\ngit diff",
+    "npm --prefix tracker-api test $(touch /tmp/x)",
+    "npm --prefix tracker-api test `touch /tmp/x`",
+    "npm --prefix tracker-api test -- --reporter=verbose",
+    "npm --prefix tracker-api test --watch",
+    "npm --prefix tracker-api test tests/store",
+    "npm --prefix tracker-client test",
+    "npm --prefix ./tracker-api test",
+    "npm test --prefix tracker-api",
+    "npm --prefix tracker-api run test",
+    "npm --prefix tracker-api run lint",
+    "cd tracker-api && npm test",
+    "npx vitest run",
+    "(npm --prefix tracker-api test)",
+    "npm  --prefix tracker-api test",
+    " npm --prefix tracker-api test",
+    "npm --prefix tracker-api test ",
+    "npm --prefix tracker-api test\n",
+    "git diff",
+    "",
+]
+
+
+def test_orchestrated_tester_command_matches_orchestrator_and_hook():
+    hook = _load_module(BASH_HOOK)
+    orchestrate = _load_module(REPO_ROOT / "scripts" / "orchestrate.py")
+    assert hook.ORCHESTRATED_TESTER_COMMAND == orchestrate.TESTER_COMMAND == ORCHESTRATED_TESTER_COMMAND
+    assert hook.ORCHESTRATION_MARKER_ENV in orchestrate.child_environment("tester", Path("/nonexistent"))
+
+
+@pytest.mark.parametrize("agent_type", [None, "tester"])
+def test_bash_hook_allows_exact_orchestrated_tester_command(agent_type, tmp_path):
+    result = _run_bash_hook(_tester_payload(ORCHESTRATED_TESTER_COMMAND, agent_type), tmp_path,
+                            _orchestrated_env(tmp_path))
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == ""
+    records = _audit(tmp_path / "bash-audit-log.jsonl")
+    assert [(r["event"], r["role"], r["command"]) for r in records] == [
+        ("bash_command_authorized", "tester", ORCHESTRATED_TESTER_COMMAND)]
+    _check_audit_record(records[0])
+
+
+@pytest.mark.parametrize("command", ORCHESTRATED_TESTER_DENIED_COMMANDS)
+def test_bash_hook_denies_modified_orchestrated_tester_commands(command, tmp_path):
+    result = _run_bash_hook(_tester_payload(command, "tester"), tmp_path, _orchestrated_env(tmp_path))
+    assert result.returncode == 0, result.stderr
+    decision = json.loads(result.stdout)["hookSpecificOutput"]
+    assert decision["permissionDecision"] == "deny"
+    assert decision["permissionDecisionReason"].startswith("bash_command_denied:")
+    records = _audit(tmp_path / "bash-audit-log.jsonl")
+    assert [(r["event"], r["role"], r["command"]) for r in records] == [
+        ("bash_command_denied", "tester", command)]
+    _check_audit_record(records[0])
+
+
+def test_bash_hook_denies_background_orchestrated_tester_command(tmp_path):
+    payload = _tester_payload(ORCHESTRATED_TESTER_COMMAND, "tester", run_in_background=True)
+    result = _run_bash_hook(payload, tmp_path, _orchestrated_env(tmp_path))
+    assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+@pytest.mark.parametrize("tool_input", [{}, {"command": None}, {"command": ["npm"]}, "npm"],
+                         ids=["missing", "null", "list", "not-a-dict"])
+def test_bash_hook_fails_closed_on_unreadable_orchestrated_tester_command(tool_input, tmp_path):
+    payload = json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": tool_input})
+    result = _run_bash_hook(payload, tmp_path, _orchestrated_env(tmp_path))
+    assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+@pytest.mark.parametrize("raw", ["", "not json"], ids=["empty", "not-json"])
+def test_bash_hook_fails_closed_on_unreadable_orchestrated_input(raw, tmp_path):
+    result = _run_bash_hook(raw, tmp_path, _orchestrated_env(tmp_path))
+    assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+@pytest.mark.parametrize("extra_env", [
+    {"AGENT_ROLE": "tester"},
+    {"ORCHESTRATION_RUN_DIR": "/tmp/run"},
+    {"AGENT_ROLE": "tester", "ORCHESTRATION_RUN_DIR": ""},
+    {"AGENT_ROLE": "implementer", "ORCHESTRATION_RUN_DIR": "/tmp/run"},
+    {"AGENT_ROLE": "reviewer", "ORCHESTRATION_RUN_DIR": "/tmp/run"},
+], ids=["tester-not-orchestrated", "marker-only", "empty-marker", "orchestrated-implementer",
+        "orchestrated-reviewer"])
+def test_bash_hook_exact_scope_needs_an_orchestrated_tester(extra_env, tmp_path):
+    result = _run_bash_hook(_tester_payload("npm --prefix tracker-api run lint", "tester"), tmp_path, extra_env)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == ""
+    assert _audit(tmp_path / "bash-audit-log.jsonl") == []
+
+
+def test_bash_hook_keeps_dependency_auditor_scope_in_orchestrated_sessions(tmp_path):
+    env = _orchestrated_env(tmp_path, role="dependency-auditor")
+    allowed = _run_bash_hook(_bash_payload("dependency-auditor", AUDITOR_ALLOWED_COMMANDS[0]), tmp_path, env)
+    assert allowed.stdout.strip() == ""
+    denied = _run_bash_hook(_bash_payload("dependency-auditor", ORCHESTRATED_TESTER_COMMAND), tmp_path, env)
+    assert json.loads(denied.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
 def test_storage_explicit_denials_match_policy_tables(policy_roles):
     allow_list = json.loads((SERVERS_DIR / "storage" / "allow-list.json").read_text(encoding="utf-8"))
     denials = allow_list.get("explicit_denials", {})
@@ -922,6 +1062,9 @@ DETERMINISTIC_EVAL_FILES = [
     "eval/test_deterministic_router.py",
     "eval/test_deterministic_step.py",
     "eval/test_deterministic_dependency_audit.py",
+    # Capstone Milestone 3: orchestration and orchestrated-run evaluator tests.
+    "eval/test_orchestration.py",
+    "eval/test_orchestrated_run_evaluator.py",
 ]
 
 

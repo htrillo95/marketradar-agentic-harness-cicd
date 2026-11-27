@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
-"""Sample storage MCP server with role-based allow-list enforcement."""
+"""Storage MCP server with role-based allow-list enforcement.
+
+Authorization and auditing are Module 4 (AGENT_ROLE + allow-list.json).
+Persistence is the Module 3 SQLite store (mcp/storage/server.py `get_db`):
+WAL mode, schema created on open, soft delete, last_updated timestamps.
+"""
 
 import datetime
 import json
 import os
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -29,18 +35,44 @@ ALLOW_LIST_PATH = Path(__file__).parent / "allow-list.json"
 ALLOW_LIST = json.loads(ALLOW_LIST_PATH.read_text(encoding="utf-8"))
 AUDIT_LOG_PATH = Path(os.environ.get("STORAGE_AUDIT_LOG", "logs/storage-audit-log.jsonl"))
 AUDIT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-STORE_PATH = Path(os.environ.get("STORAGE_STORE", str(AUDIT_LOG_PATH.parent / "storage-store.json")))
+STORE_PATH = Path(os.environ.get("STORAGE_STORE", str(AUDIT_LOG_PATH.parent / "storage-store.db")))
 STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
-def _load_store() -> dict[str, Any]:
-    if STORE_PATH.exists():
-        return json.loads(STORE_PATH.read_text(encoding="utf-8"))
-    return {}
+def _now() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
-def _save_store(data: dict[str, Any]) -> None:
-    STORE_PATH.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+def _get_db() -> sqlite3.Connection:
+    """Open the persistent SQLite store and ensure its schema exists."""
+    conn = sqlite3.connect(STORE_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS entries (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            deleted INTEGER NOT NULL DEFAULT 0,
+            last_updated TEXT NOT NULL
+        )
+        """
+    )
+    return conn
+
+
+def _upsert(key: str, value: str) -> None:
+    conn = _get_db()
+    try:
+        conn.execute(
+            "INSERT INTO entries (key, value, deleted, last_updated) VALUES (?, ?, 0, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, deleted = 0, "
+            "last_updated = excluded.last_updated",
+            (key, value, _now()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _record(event: str, operation: str, outcome: str, detail: str | None = None) -> dict[str, Any]:
@@ -71,9 +103,7 @@ def _authorize(operation: str) -> None:
 @mcp.tool
 def write_entry(key: str, value: str) -> dict:
     _authorize("write_entry")
-    data = _load_store()
-    data[key] = value
-    _save_store(data)
+    _upsert(key, value)
     _record("storage_write", "write_entry", "success")
     return {"ok": True, "key": key}
 
@@ -81,36 +111,53 @@ def write_entry(key: str, value: str) -> dict:
 @mcp.tool
 def read_entry(key: str) -> dict:
     _authorize("read_entry")
-    data = _load_store()
+    conn = _get_db()
+    try:
+        row = conn.execute(
+            "SELECT value FROM entries WHERE key = ? AND deleted = 0", (key,)
+        ).fetchone()
+    finally:
+        conn.close()
     _record("storage_read", "read_entry", "success")
-    return {"key": key, "value": data.get(key)}
+    return {"key": key, "value": row["value"] if row else None}
 
 
 @mcp.tool
 def list_entries() -> dict:
     _authorize("list_entries")
-    data = _load_store()
+    conn = _get_db()
+    try:
+        rows = conn.execute(
+            "SELECT key FROM entries WHERE deleted = 0 ORDER BY key"
+        ).fetchall()
+    finally:
+        conn.close()
     _record("storage_list", "list_entries", "success")
-    return {"keys": sorted(data)}
+    return {"keys": [row["key"] for row in rows]}
 
 
 @mcp.tool
 def update_entry(key: str, value: str) -> dict:
     _authorize("update_entry")
-    data = _load_store()
-    data[key] = value
-    _save_store(data)
+    _upsert(key, value)
     _record("storage_update", "update_entry", "success")
     return {"ok": True, "key": key}
 
 
 @mcp.tool
 def delete_entry(key: str) -> dict:
+    """Soft-delete: the row is marked deleted, not removed (Module 3 behaviour)."""
     _authorize("delete_entry")
-    data = _load_store()
-    existed = key in data
-    data.pop(key, None)
-    _save_store(data)
+    conn = _get_db()
+    try:
+        cursor = conn.execute(
+            "UPDATE entries SET deleted = 1, last_updated = ? WHERE key = ? AND deleted = 0",
+            (_now(), key),
+        )
+        conn.commit()
+        existed = cursor.rowcount > 0
+    finally:
+        conn.close()
     _record("storage_delete", "delete_entry", "success")
     return {"ok": True, "deleted": existed}
 

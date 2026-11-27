@@ -7,5 +7,5 @@
     "delete_entry",
     "audit_read"
   ],
-  "data_store": "JSON sample store; replace with SQLite/FastMCP implementation as needed"
+  "data_store": "SQLite (STORAGE_STORE, default storage-store.db next to the audit log); soft delete"
 }
