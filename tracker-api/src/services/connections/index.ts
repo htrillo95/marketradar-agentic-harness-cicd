@@ -17,7 +17,7 @@ export function listConnectionServices(): ProviderConnectionService[] {
 export function getConnectionService(
   providerId: string,
 ): ProviderConnectionService | null {
-  if (providerId in services) {
+  if (Object.hasOwn(services, providerId)) {
     return services[providerId as ProviderId]
   }
   return null
