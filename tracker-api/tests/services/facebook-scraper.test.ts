@@ -6,6 +6,7 @@ vi.mock('../../src/lib/prisma', () => ({
 
 import {
   buildMarketplaceSearchUrl,
+  ScraperError,
   type MarketplaceSearchParams,
 } from '../../src/services/facebook-scraper'
 
@@ -78,5 +79,29 @@ describe('buildMarketplaceSearchUrl', () => {
 
       expect(url.searchParams.has('maxPrice')).toBe(false)
     })
+  })
+})
+
+describe('ScraperError', () => {
+  it('is an Error with the ScraperError name and the given message', () => {
+    const err = new ScraperError('boom')
+
+    expect(err).toBeInstanceOf(ScraperError)
+    expect(err).toBeInstanceOf(Error)
+    expect(err.name).toBe('ScraperError')
+    expect(err.message).toBe('boom')
+  })
+
+  it('keeps the same cause object when one is provided', () => {
+    const cause = new Error('root')
+    const err = new ScraperError('boom', { cause })
+
+    expect(err.cause).toBe(cause)
+  })
+
+  it('has an undefined cause when no options are provided', () => {
+    const err = new ScraperError('boom')
+
+    expect(err.cause).toBeUndefined()
   })
 })
